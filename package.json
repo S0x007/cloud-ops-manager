@@ -1,0 +1,60 @@
+{
+  "name": "aws-ops-manager",
+  "version": "1.0.0",
+  "description": "Cross-platform AWS ops desktop client — EC2/S3/ECS/SSM multi-account management",
+  "main": "./out/main/index.js",
+  "homepage": "https://github.com/S0x007/aws-ops-manager",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/S0x007/aws-ops-manager.git"
+  },
+  "bugs": {
+    "url": "https://github.com/S0x007/aws-ops-manager/issues"
+  },
+  "author": "S0x007",
+  "license": "MIT",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "package:mac": "npm run build && electron-builder --mac",
+    "package:win": "npm run build && electron-builder --win",
+    "package:linux": "npm run build && electron-builder --linux",
+    "package:all": "npm run build && electron-builder --mac --win --linux",
+    "postinstall": "electron-builder install-app-deps"
+  },
+  "dependencies": {
+    "@ant-design/icons": "^5.4.0",
+    "@aws-sdk/client-cloudwatch": "^3.1053.0",
+    "@aws-sdk/client-ec2": "^3.600.0",
+    "@aws-sdk/client-ecs": "^3.600.0",
+    "@aws-sdk/client-s3": "^3.600.0",
+    "@aws-sdk/client-ssm": "^3.600.0",
+    "@aws-sdk/client-sts": "^3.600.0",
+    "@aws-sdk/credential-providers": "^3.600.0",
+    "@aws-sdk/lib-storage": "^3.1053.0",
+    "@aws-sdk/s3-request-presigner": "^3.1053.0",
+    "antd": "^5.22.0",
+    "dayjs": "^1.11.13",
+    "electron-store": "^8.2.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.26.0",
+    "uuid": "^9.0.1",
+    "ws": "^8.18.0",
+    "xterm": "^5.3.0",
+    "zustand": "^4.5.4"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@types/uuid": "^9.0.8",
+    "@types/ws": "^8.5.10",
+    "@vitejs/plugin-react": "^4.3.1",
+    "electron": "^31.3.1",
+    "electron-builder": "^24.13.3",
+    "electron-vite": "^2.3.0",
+    "typescript": "^5.5.3"
+  }
+}

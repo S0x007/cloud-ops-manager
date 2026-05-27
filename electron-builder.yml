@@ -1,0 +1,50 @@
+appId: com.aws.ops-manager
+productName: AWS Ops Manager
+copyright: Copyright 2026
+
+directories:
+  output: dist
+  buildResources: resources
+
+files:
+  - out/**/*
+
+extraResources:
+  - from: resources/icon-mac.png
+    to: icon-mac.png
+
+asar: true
+
+mac:
+  category: public.app-category.developer-tools
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+    - target: zip
+      arch: [arm64, x64]
+  icon: resources/icon.icns
+  hardenedRuntime: true
+  gatekeeperAssess: false
+
+win:
+  target:
+    - target: nsis
+      arch: [x64, arm64]
+  # 与 macOS 同源：resources/icon-mac.png → icon-win.ico
+  icon: resources/icon-win.ico
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  perMachine: false
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: AWS Ops Manager
+
+linux:
+  target:
+    - target: AppImage
+      arch: [x64, arm64]
+  icon: resources/icon.png
+  category: Development
+  maintainer: "xize"
