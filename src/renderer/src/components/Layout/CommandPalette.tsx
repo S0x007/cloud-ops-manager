@@ -3,16 +3,19 @@ import { Modal, Input, List, Tag, Typography, Empty, Spin } from 'antd'
 import { useNavigate } from 'react-router-dom'
 import {
   SearchOutlined, CloudServerOutlined, FolderOutlined,
-  CodeOutlined, CameraOutlined, SettingOutlined,
+  CodeOutlined, CameraOutlined, SettingOutlined, DatabaseOutlined,
 } from '@ant-design/icons'
+import { useCloudOperation } from '../../hooks/useCloudOperation'
 import { useProfileStore } from '../../stores/profileStore'
 import { useRegionStore } from '../../stores/regionStore'
+import { useProviderStore } from '../../stores/providerStore'
 import { useT } from '../../i18n'
+import { formatAwsInstanceSpec, formatHuaweiFlavorSpec } from '../../lib/instanceSpec'
 
 const { Text } = Typography
 
 interface SearchResult {
-  id: string; type: 'instance' | 'bucket' | 'action'; label: string; desc: string; path: string
+  id: string; type: string; label: string; desc: string; path: string
 }
 
 interface CommandPaletteProps { open: boolean; onClose: () => void }
@@ -24,16 +27,28 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps): JSX.Elem
   const [query, setQuery] = useState('')
   const [searchResults, setSearchResults] = useState<SearchResult[]>([])
   const [searching, setSearching] = useState(false)
+  const { invoke } = useCloudOperation()
   const activeProfile = useProfileStore((s) => s.activeProfile)
   const activeSource = useProfileStore((s) => s.activeSource)
   const activeRegion = useRegionStore((s) => s.activeRegion)
+  const currentProvider = useProviderStore((s) => s.currentProvider)
 
-  const quickActions = useMemo(() => [
-    { id: 'action-ssm', icon: <CodeOutlined />, label: t('cmd.ssmConnect'), path: '/terminal' },
-    { id: 'action-snapshot', icon: <CameraOutlined />, label: t('cmd.createSnapshot'), path: '/volumes' },
-    { id: 'action-s3', icon: <FolderOutlined />, label: t('cmd.uploadS3'), path: '/s3' },
-    { id: 'action-settings', icon: <SettingOutlined />, label: t('cmd.openSettings'), path: '/settings' },
-  ], [t])
+  const quickActions = useMemo(() => {
+    if (currentProvider === 'huawei') {
+      return [
+        { id: 'action-ecs', icon: <CloudServerOutlined />, label: t('huawei.ecs'), path: '/huawei/ecs' },
+        { id: 'action-obs', icon: <FolderOutlined />, label: t('huawei.obs'), path: '/huawei/obs' },
+        { id: 'action-rds', icon: <DatabaseOutlined />, label: t('huawei.rds'), path: '/huawei/rds' },
+        { id: 'action-settings', icon: <SettingOutlined />, label: t('cmd.openSettings'), path: '/settings' },
+      ]
+    }
+    return [
+      { id: 'action-ssm', icon: <CodeOutlined />, label: t('cmd.ssmConnect'), path: '/terminal' },
+      { id: 'action-snapshot', icon: <CameraOutlined />, label: t('cmd.createSnapshot'), path: '/volumes' },
+      { id: 'action-s3', icon: <FolderOutlined />, label: t('cmd.uploadS3'), path: '/s3' },
+      { id: 'action-settings', icon: <SettingOutlined />, label: t('cmd.openSettings'), path: '/settings' },
+    ]
+  }, [currentProvider, t])
 
   useEffect(() => {
     if (open) { setTimeout(() => inputRef.current?.focus(), 50); setQuery('') }
@@ -46,30 +61,90 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps): JSX.Elem
     const lower = q.toLowerCase()
 
     try {
-      const instances = await window.electronAPI.ec2.listInstances({
-        region: activeRegion, profile: activeProfile, source: activeSource,
-      })
-      for (const i of instances) {
-        if (i.instanceId.toLowerCase().includes(lower) || (i.name || '').toLowerCase().includes(lower) || i.publicIpAddress.includes(lower)) {
-          results.push({ id: i.instanceId, type: 'instance', label: i.name || i.instanceId, desc: `${i.instanceType} · ${i.state}`, path: `/ec2/${i.instanceId}` })
-        }
-      }
-    } catch { /* ignore */ }
+      if (currentProvider === 'huawei') {
+        const [ecsR, obsR, rdsR] = await Promise.allSettled([
+          invoke('ecs', 'ecs:list', {}),
+          invoke('obs', 'obs:listBuckets', {}),
+          invoke('rds', 'rds:list', {}),
+        ])
 
-    try {
-      const buckets = await window.electronAPI.s3.listBuckets({
-        region: activeRegion, profile: activeProfile, source: activeSource,
-      })
-      for (const b of buckets) {
-        if (b.name.toLowerCase().includes(lower)) {
-          results.push({ id: b.name, type: 'bucket', label: b.name, desc: b.region ? `Region: ${b.region}` : '', path: `/s3/${b.name}` })
+        if (ecsR.status === 'fulfilled' && ecsR.value.success && Array.isArray(ecsR.value.data)) {
+          for (const s of ecsR.value.data as any[]) {
+            const id = String(s.id ?? '')
+            const name = String(s.name ?? '')
+            if (id.toLowerCase().includes(lower) || name.toLowerCase().includes(lower)) {
+              results.push({
+                id, type: 'ECS', label: name || id,
+                desc: `${formatHuaweiFlavorSpec(s.vcpus, s.memoryMB)} · ${s.status ?? ''}`,
+                path: `/huawei/ecs/${id}`,
+              })
+            }
+          }
+        }
+
+        if (obsR.status === 'fulfilled' && obsR.value.success && Array.isArray(obsR.value.data)) {
+          for (const b of obsR.value.data as any[]) {
+            const name = String(b.name ?? b.bucket ?? '')
+            if (name.toLowerCase().includes(lower)) {
+              results.push({
+                id: name, type: 'OBS', label: name,
+                desc: b.location ? `Region: ${b.location}` : '',
+                path: '/huawei/obs',
+              })
+            }
+          }
+        }
+
+        if (rdsR.status === 'fulfilled' && rdsR.value.success && Array.isArray(rdsR.value.data)) {
+          for (const r of rdsR.value.data as any[]) {
+            const id = String(r.id ?? '')
+            const name = String(r.name ?? '')
+            if (id.toLowerCase().includes(lower) || name.toLowerCase().includes(lower)) {
+              results.push({
+                id, type: 'RDS', label: name || id,
+                desc: `${r.type ?? ''} · ${r.status ?? ''}`,
+                path: `/huawei/rds/${id}`,
+              })
+            }
+          }
+        }
+      } else {
+        const [ec2R, s3R] = await Promise.allSettled([
+          window.electronAPI.ec2.listInstances({
+            region: activeRegion, profile: activeProfile, source: activeSource,
+          }),
+          window.electronAPI.s3.listBuckets({
+            region: activeRegion, profile: activeProfile, source: activeSource,
+          }),
+        ])
+
+        if (ec2R.status === 'fulfilled') {
+          for (const i of ec2R.value) {
+            if (i.instanceId.toLowerCase().includes(lower) || (i.name || '').toLowerCase().includes(lower) || i.publicIpAddress.includes(lower)) {
+              results.push({
+                id: i.instanceId, type: 'EC2', label: i.name || i.instanceId,
+                desc: `${formatAwsInstanceSpec(i.instanceType, t)} · ${i.state}`, path: `/ec2/${i.instanceId}`,
+              })
+            }
+          }
+        }
+
+        if (s3R.status === 'fulfilled') {
+          for (const b of s3R.value) {
+            if (b.name.toLowerCase().includes(lower)) {
+              results.push({
+                id: b.name, type: 'S3', label: b.name,
+                desc: b.region ? `Region: ${b.region}` : '', path: `/s3/${b.name}`,
+              })
+            }
+          }
         }
       }
     } catch { /* ignore */ }
 
     setSearchResults(results.slice(0, 20))
     setSearching(false)
-  }, [activeRegion, activeProfile, activeSource])
+  }, [invoke, activeRegion, activeProfile, activeSource, currentProvider, t])
 
   useEffect(() => {
     const timer = setTimeout(() => doSearch(query), 300)
@@ -77,6 +152,13 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps): JSX.Elem
   }, [query, doSearch])
 
   const filteredActions = quickActions.filter((a) => !query || a.label.toLowerCase().includes(query.toLowerCase()))
+
+  const typeIcon = (type: string) => {
+    if (type === 'S3' || type === 'OBS') return <FolderOutlined style={{ color: '#faad14' }} />
+    if (type === 'RDS') return <DatabaseOutlined style={{ color: '#CF0A2C' }} />
+    if (type === 'ECS' && currentProvider === 'huawei') return <CloudServerOutlined style={{ color: '#CF0A2C' }} />
+    return <CloudServerOutlined style={{ color: '#1677ff' }} />
+  }
 
   const execute = (item: SearchResult) => {
     onClose()
@@ -104,8 +186,8 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps): JSX.Elem
               onMouseEnter={(e) => (e.currentTarget as HTMLElement).style.background = '#f5f5f5'}
               onMouseLeave={(e) => (e.currentTarget as HTMLElement).style.background = ''}>
               <List.Item.Meta
-                avatar={item.type === 'instance' ? <CloudServerOutlined style={{ color: '#1677ff' }} /> : <FolderOutlined style={{ color: '#faad14' }} />}
-                title={<span>{item.label} <Tag style={{ fontSize: 10 }}>{item.type === 'instance' ? 'EC2' : 'S3'}</Tag></span>}
+                avatar={typeIcon(item.type)}
+                title={<span>{item.label} <Tag style={{ fontSize: 10 }}>{item.type}</Tag></span>}
                 description={item.desc}
               />
             </List.Item>
@@ -132,6 +214,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps): JSX.Elem
       </div>
       <div style={{ padding: '8px 16px', borderTop: '1px solid #f0f0f0', display: 'flex', justifyContent: 'space-between' }}>
         <Text type="secondary" style={{ fontSize: 11 }}>{t('cmd.footer')}</Text>
+        <Tag style={{ fontSize: 10 }}>{currentProvider === 'huawei' ? 'Huawei Cloud' : 'AWS'}</Tag>
       </div>
     </Modal>
   )

@@ -8,6 +8,7 @@ import {
 import { useProfileStore } from '../../stores/profileStore'
 import { useRegionStore } from '../../stores/regionStore'
 import { useT, useTf } from '../../i18n'
+import { toPreviewDataUrl } from '../../../../shared/object-preview'
 
 const { Text } = Typography
 
@@ -16,6 +17,8 @@ interface FilePreviewModalProps {
   bucket: string
   fileKey: string
   fileName: string
+  versionId?: string
+  readOnly?: boolean
   startInEditMode?: boolean    // 直接进入编辑模式
   onClose: () => void
   onSaved: () => void
@@ -23,7 +26,7 @@ interface FilePreviewModalProps {
 
 type PreviewContent =
   | { type: 'text'; contentType: string; content: string; size: number }
-  | { type: 'image'; contentType: string; tmpPath: string; size: number }
+  | { type: 'image'; contentType: string; base64: string; size: number }
   | { type: 'binary'; contentType: string; size: number }
 
 function formatSize(bytes: number): string {
@@ -33,7 +36,7 @@ function formatSize(bytes: number): string {
 }
 
 export function FilePreviewModal({
-  open, bucket, fileKey, fileName, startInEditMode, onClose, onSaved,
+  open, bucket, fileKey, fileName, versionId, readOnly, startInEditMode, onClose, onSaved,
 }: FilePreviewModalProps): JSX.Element {
   const { message } = App.useApp()
   const t = useT()
@@ -62,16 +65,17 @@ export function FilePreviewModal({
       const result = await window.electronAPI.s3.getObjectContent({
         region: activeRegion, profile: activeProfile, source: activeSource,
         bucket, key: fileKey,
+        ...(versionId ? { versionId } : {}),
       })
       setData(result as PreviewContent)
       if (result.type === 'text') {
         setEditedContent(result.content)
-        setEditing(!!startInEditMode)
+        setEditing(!!startInEditMode && !readOnly && !versionId)
       }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : String(err))
     } finally { setLoading(false) }
-  }, [open, bucket, fileKey, activeRegion, activeProfile, activeSource, startInEditMode])
+  }, [open, bucket, fileKey, versionId, readOnly, activeRegion, activeProfile, activeSource, startInEditMode])
 
   useEffect(() => { load() }, [load])
   useEffect(() => { if (editing) textareaRef.current?.focus() }, [editing])
@@ -161,7 +165,7 @@ export function FilePreviewModal({
     }
   }
 
-  const isEditable = data?.type === 'text'
+  const isEditable = data?.type === 'text' && !readOnly && !versionId
 
   // 更多操作菜单
   const moreItems: MenuProps['items'] = [
@@ -181,6 +185,11 @@ export function FilePreviewModal({
         <Space>
           <FileTextOutlined />
           <span>{fileName}</span>
+          {versionId && (
+            <Text type="secondary" style={{ fontSize: 11, fontWeight: 'normal' }}>
+              {versionId.slice(0, 12)}…
+            </Text>
+          )}
           {data && <Text type="secondary" style={{ fontSize: 12, fontWeight: 'normal' }}>({formatSize(data.size)})</Text>}
           {changed && <Text type="warning" style={{ fontSize: 11 }}>{t('filePreview.modified')}</Text>}
           {editing && <Text type="secondary" style={{ fontSize: 10 }}>{t('filePreview.saveHint')}</Text>}
@@ -285,7 +294,7 @@ export function FilePreviewModal({
       {/* 图片预览 */}
       {data && data.type === 'image' && (
         <div style={{ textAlign: 'center', padding: 16, background: '#1e1e1e' }}>
-          <img src={`file://${data.tmpPath}`} alt={fileName}
+          <img src={toPreviewDataUrl(data.contentType, data.base64)} alt={fileName}
             style={{ maxWidth: '100%', maxHeight: '65vh', objectFit: 'contain' }} />
         </div>
       )}

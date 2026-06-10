@@ -37,11 +37,12 @@ export function useS3() {
 
   const fetchObjects = useCallback(
     async (bucket: string, prefix?: string) => {
-      store.setObjects([], false)
-      store.setLoadingObjects(true)
-      store.setError(null)
-      store.setCurrentBucket(bucket)
-      store.setCurrentPrefix(prefix ?? '')
+      const s = useS3Store.getState()
+      s.setObjects([], false, null)
+      s.setLoadingObjects(true)
+      s.setError(null)
+      s.setCurrentBucket(bucket)
+      s.setCurrentPrefix(prefix ?? '')
       try {
         const result = await window.electronAPI.s3.listObjects({
           region: activeRegion,
@@ -50,17 +51,41 @@ export function useS3() {
           bucket,
           prefix: prefix ?? '',
         })
-        store.setObjects(result.objects, result.truncated)
+        useS3Store.getState().setObjects(result.objects, result.truncated, result.nextContinuationToken ?? null)
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err)
-        store.setObjects([], false)
-        store.setError(msg)
+        useS3Store.getState().setObjects([], false, null)
+        useS3Store.getState().setError(msg)
       } finally {
-        store.setLoadingObjects(false)
+        useS3Store.getState().setLoadingObjects(false)
       }
     },
     [activeProfile, activeSource, activeRegion],
   )
+
+  const loadMoreObjects = useCallback(async () => {
+    const s = useS3Store.getState()
+    const bucket = s.currentBucket
+    const token = s.listContinuationToken
+    if (!bucket || !token) return
+    s.setLoadingObjects(true)
+    try {
+      const result = await window.electronAPI.s3.listObjects({
+        region: activeRegion,
+        profile: activeProfile,
+        source: activeSource,
+        bucket,
+        prefix: s.currentPrefix,
+        continuationToken: token,
+        maxItems: 1000,
+      })
+      useS3Store.getState().appendObjects(result.objects, result.truncated, result.nextContinuationToken ?? null)
+    } catch (err: unknown) {
+      message.error(err instanceof Error ? err.message : String(err))
+    } finally {
+      useS3Store.getState().setLoadingObjects(false)
+    }
+  }, [activeProfile, activeSource, activeRegion, message])
 
   const deleteObject = useCallback(
     async (bucket: string, key: string) => {
@@ -113,7 +138,7 @@ export function useS3() {
         if (!savePath) return
 
         const fileName = key.split('/').pop() ?? key
-        const unsub = window.electronAPI.s3.onDownloadProgress((data) => {
+        const unsub = window.electronAPI.s3.onDownloadProgress((data: { key: string; loaded: number; total: number }) => {
           const pct = data.total > 0 ? Math.round((data.loaded / data.total) * 100) : 0
           message.loading({
             content: tf('s3.msg.downloading', {
@@ -201,6 +226,7 @@ export function useS3() {
     ...store,
     fetchBuckets,
     fetchObjects,
+    loadMoreObjects,
     deleteObject,
     deleteObjects,
     uploadFile,

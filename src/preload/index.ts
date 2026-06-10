@@ -14,6 +14,8 @@ const electronAPI = {
       ipcRenderer.invoke('ec2:stop-instance', params),
     rebootInstance: (params: { region: string; profile: string; source: string; instanceId: string }) =>
       ipcRenderer.invoke('ec2:reboot-instance', params),
+    terminateInstance: (params: { region: string; profile: string; source: string; instanceId: string }) =>
+      ipcRenderer.invoke('ec2:terminate-instance', params),
     describeInstanceTypes: (params: { region: string; profile: string; source: string; types: string[] }) =>
       ipcRenderer.invoke('ec2:describe-instance-types', params),
     getConsoleOutput: (params: { region: string; profile: string; source: string; instanceId: string }) =>
@@ -24,21 +26,23 @@ const electronAPI = {
   s3: {
     listBuckets: (params: { region: string; profile: string; source: string }) =>
       ipcRenderer.invoke('s3:list-buckets', params),
-    listObjects: (params: { region: string; profile: string; source: string; bucket: string; prefix: string }) =>
-      ipcRenderer.invoke('s3:list-objects', params),
+    listObjects: (params: {
+      region: string; profile: string; source: string; bucket: string; prefix: string
+      continuationToken?: string; maxItems?: number
+    }) => ipcRenderer.invoke('s3:list-objects', params),
     headBucket: (params: { profile: string; source: string; bucket: string }) =>
       ipcRenderer.invoke('s3:head-bucket', params),
     deleteObject: (params: { region: string; profile: string; source: string; bucket: string; key: string }) =>
       ipcRenderer.invoke('s3:delete-object', params),
     uploadFile: (params: { region: string; profile: string; source: string; bucket: string; key: string; localPath: string }) =>
       ipcRenderer.invoke('s3:upload-file', params),
-    downloadFile: (params: { region: string; profile: string; source: string; bucket: string; key: string; savePath: string }) =>
+    downloadFile: (params: { region: string; profile: string; source: string; bucket: string; key: string; savePath: string; versionId?: string }) =>
       ipcRenderer.invoke('s3:download-file', params),
-    getSignedUrl: (params: { region: string; profile: string; source: string; bucket: string; key: string }) =>
+    getSignedUrl: (params: { region: string; profile: string; source: string; bucket: string; key: string; expiresIn?: number }) =>
       ipcRenderer.invoke('s3:get-signed-url', params),
     createFolder: (params: { region: string; profile: string; source: string; bucket: string; key: string }) =>
       ipcRenderer.invoke('s3:create-folder', params),
-    getObjectContent: (params: { region: string; profile: string; source: string; bucket: string; key: string }) =>
+    getObjectContent: (params: { region: string; profile: string; source: string; bucket: string; key: string; versionId?: string }) =>
       ipcRenderer.invoke('s3:get-object-content', params),
     putObjectContent: (params: { region: string; profile: string; source: string; bucket: string; key: string; content: string; contentType: string }) =>
       ipcRenderer.invoke('s3:put-object-content', params),
@@ -52,8 +56,10 @@ const electronAPI = {
       ipcRenderer.invoke('s3:get-object-attributes', params),
     headObject: (params: { region: string; profile: string; source: string; bucket: string; key: string }) =>
       ipcRenderer.invoke('s3:head-object', params),
-    listObjectVersions: (params: { region: string; profile: string; source: string; bucket: string; prefix: string }) =>
+    listObjectVersions: (params: { region: string; profile: string; source: string; bucket: string; prefix?: string; key?: string }) =>
       ipcRenderer.invoke('s3:list-object-versions', params),
+    deleteObjectVersion: (params: { region: string; profile: string; source: string; bucket: string; key: string; versionId: string }) =>
+      ipcRenderer.invoke('s3:delete-object-version', params),
     onUploadProgress: (callback: (data: { key: string; loaded: number; total: number }) => void) => {
       const handler = (_event: Electron.IpcRendererEvent, data: any) => callback(data)
       ipcRenderer.on('s3:upload-progress', handler)
@@ -257,17 +263,16 @@ const electronAPI = {
 
   // Profiles + Credentials
   profiles: {
-    list: () => ipcRenderer.invoke('profiles:list'),
     listAll: () => ipcRenderer.invoke('profiles:list-all'),
-    verify: (params: { id: string; source: string }) => ipcRenderer.invoke('profiles:verify', params),
-    ssoLogin: (profile: string) => ipcRenderer.invoke('profiles:sso-login', profile),
+    verify: (params: { id: string; source: string; provider?: string }) => ipcRenderer.invoke('profiles:verify', params),
   },
 
   credentials: {
     list: () => ipcRenderer.invoke('credentials:list'),
     add: (data: { name: string; accessKeyId: string; secretAccessKey: string; region: string; description: string }) =>
       ipcRenderer.invoke('credentials:add', data),
-    update: (params: { id: string; data: any }) => ipcRenderer.invoke('credentials:update', params),
+    update: (params: { id: string; data: { name?: string; accessKeyId?: string; secretAccessKey?: string; region?: string; description?: string; provider?: string; extraFields?: Record<string, string> } }) =>
+      ipcRenderer.invoke('credentials:update', params),
     delete: (id: string) => ipcRenderer.invoke('credentials:delete', id),
   },
 
@@ -275,12 +280,33 @@ const electronAPI = {
   app: {
     getStore: (key: string) => ipcRenderer.invoke('app:get-store', key),
     setStore: (key: string, value: unknown) => ipcRenderer.invoke('app:set-store', key, value),
+    getVersion: () => ipcRenderer.invoke('app:get-version'),
+    checkForUpdates: () => ipcRenderer.invoke('app:check-for-updates'),
+    downloadUpdate: () => ipcRenderer.invoke('app:download-update'),
+    quitAndInstall: () => ipcRenderer.invoke('app:quit-and-install'),
+    onUpdateStatus: (callback: (payload: unknown) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, data: unknown) => callback(data)
+      ipcRenderer.on('app:update-status', handler)
+      return () => ipcRenderer.removeListener('app:update-status', handler)
+    },
     openFileDialog: (options: { filters?: { name: string; extensions: string[] }[]; multiSelections?: boolean }) =>
       ipcRenderer.invoke('app:open-file-dialog', options),
     saveFileDialog: (options: { defaultPath?: string; filters?: { name: string; extensions: string[] }[] }) =>
       ipcRenderer.invoke('app:save-file-dialog', options),
     saveFile: (params: { content: string; defaultName: string }) =>
       ipcRenderer.invoke('app:save-file', params),
+    openExternal: (url: string) => ipcRenderer.invoke('app:open-external', url),
+  },
+
+  // 通用云 API
+  cloud: {
+    invoke: (params: { provider: string; credentialId: string; region: string; service: string; action: string; payload: Record<string, unknown> }) =>
+      ipcRenderer.invoke('cloud:invoke', params),
+    onObsDownloadProgress: (callback: (data: { key: string; loaded: number; total: number }) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, data: unknown) => callback(data as { key: string; loaded: number; total: number })
+      ipcRenderer.on('obs:download-progress', handler)
+      return () => ipcRenderer.removeListener('obs:download-progress', handler)
+    },
   },
 }
 

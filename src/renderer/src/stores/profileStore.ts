@@ -8,12 +8,14 @@ export interface UnifiedCredential {
   region: string
   accountId?: string
   isExpired?: boolean
+  provider?: string
+  extraFields?: Record<string, string>
 }
 
 interface ProfileState {
   allCredentials: UnifiedCredential[]
   activeProfile: string          // credential id 或 profile name
-  activeSource: 'aws-config' | 'custom'
+  activeSource: string
   activeRegion: string
   accountId: string | null
   isVerifying: boolean
@@ -21,7 +23,7 @@ interface ProfileState {
   isLoading: boolean
 
   setAllCredentials: (creds: UnifiedCredential[]) => void
-  setActiveCredential: (id: string, source: 'aws-config' | 'custom') => void
+  setActiveCredential: (id: string, source: string) => void
   setActiveRegion: (region: string) => void
   setAccountId: (id: string | null) => void
   setVerifying: (v: boolean) => void
@@ -31,8 +33,8 @@ interface ProfileState {
 
 export const useProfileStore = create<ProfileState>((set) => ({
   allCredentials: [],
-  activeProfile: 'default',
-  activeSource: 'aws-config',
+  activeProfile: '',
+  activeSource: 'custom',
   activeRegion: 'us-east-1',
   accountId: null,
   isVerifying: false,

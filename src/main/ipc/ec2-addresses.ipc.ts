@@ -48,7 +48,7 @@ export function registerEc2AddressesIpc(): void {
         TagSpecifications: [{
           ResourceType: 'elastic-ip',
           Tags: [
-            { Key: 'AllocatedBy', Value: 'AWS Ops Manager' },
+            { Key: 'AllocatedBy', Value: 'Cloud Ops Manager' },
             { Key: 'AllocationDate', Value: now },
           ],
         }],

@@ -153,8 +153,10 @@ function RuleTable({
       >
         <Form form={form} layout="vertical" initialValues={{ protocol: 'tcp', fromPort: 443, toPort: 443, cidr: '0.0.0.0/0', description: '' }}>
           <Form.Item label={t('sg.preset')}>
-            <Select options={presetRules} placeholder={t('sg.quickSelect')} onChange={(_, opt: { protocol: string; from: number; to: number }) => {
-              form.setFieldsValue({ protocol: opt.protocol, fromPort: opt.from, toPort: opt.to })
+            <Select options={presetRules} placeholder={t('sg.quickSelect')} onChange={(_, opt) => {
+              const rule = Array.isArray(opt) ? opt[0] : opt
+              if (!rule) return
+              form.setFieldsValue({ protocol: rule.protocol, fromPort: rule.from, toPort: rule.to })
             }} allowClear />
           </Form.Item>
           <Space>

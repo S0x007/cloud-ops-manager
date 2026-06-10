@@ -22,6 +22,7 @@ import {
   DeleteBucketCommand,
   DeleteObjectsCommand,
   ListObjectsV2Command,
+  type BucketLocationConstraint,
 } from '@aws-sdk/client-s3'
 import { clientFactory } from '../aws/client.factory'
 import * as s3Service from '../aws/s3.service'
@@ -54,7 +55,7 @@ export function registerS3BucketIpc(): void {
       await client.send(new CreateBucketCommand({
         Bucket: params.bucket,
         CreateBucketConfiguration: params.locationConstraint && params.locationConstraint !== 'us-east-1'
-          ? { LocationConstraint: params.locationConstraint }
+          ? { LocationConstraint: params.locationConstraint as BucketLocationConstraint }
           : undefined,
       }))
       if (params.enableEncryption) {

@@ -87,11 +87,32 @@ export function useEC2() {
     [activeProfile, activeSource, activeRegion, fetchInstances],
   )
 
+  const terminateInstance = useCallback(
+    async (instanceId: string) => {
+      try {
+        await window.electronAPI.ec2.terminateInstance({
+          region: activeRegion,
+          profile: activeProfile,
+          source: activeSource,
+          instanceId,
+        })
+        store.updateInstanceState(instanceId, 'terminating')
+        setTimeout(() => fetchInstances(true), 3000)
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err)
+        store.setError(msg)
+        throw err
+      }
+    },
+    [activeProfile, activeSource, activeRegion, fetchInstances],
+  )
+
   return {
     ...store,
     fetchInstances,
     startInstance,
     stopInstance,
     rebootInstance,
+    terminateInstance,
   }
 }

@@ -40,8 +40,8 @@ export function registerEc2AmisIpc(): void {
   ipcMain.handle('ec2:copy-image', async (_e, params: { region: string; profile: string; source: string; imageId: string; name: string; destRegion: string }) => {
     try {
       setSource(params)
-      const client = clientFactory.getClient(EC2Client, { region: params.region })
-      const resp = await client.send(new CopyImageCommand({ SourceImageId: params.imageId, SourceRegion: params.region, Name: params.name, DestinationRegion: params.destRegion }))
+      const destClient = clientFactory.getClient(EC2Client, { region: params.destRegion })
+      const resp = await destClient.send(new CopyImageCommand({ SourceImageId: params.imageId, SourceRegion: params.region, Name: params.name }))
       return { imageId: resp.ImageId ?? '' }
     } catch (err) { throw wErr(err, '复制AMI失败') }
   })

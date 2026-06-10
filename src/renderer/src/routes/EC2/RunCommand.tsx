@@ -36,10 +36,13 @@ interface CommandResult {
 
 interface SsmStatus {
   managed: boolean
+  online: boolean
   agentVersion?: string
   platformName?: string
   pingStatus?: string
   lastPingDateTime?: string
+  errorType?: string
+  errorMessage?: string
 }
 
 export function RunCommand({ instanceId }: { instanceId: string }): JSX.Element {
@@ -58,6 +61,7 @@ export function RunCommand({ instanceId }: { instanceId: string }): JSX.Element 
 
   const [ssmError, setSsmError] = useState<string | null>(null)
   const statusChecked = useRef(false)
+  const commandAllowed = !!ssmStatus?.managed && !!ssmStatus?.online
 
   const presetCommands = useMemo(
     () => PRESET_COMMANDS.map((p) => ({
@@ -100,7 +104,7 @@ export function RunCommand({ instanceId }: { instanceId: string }): JSX.Element 
       const result = await window.electronAPI.ssm.sendCommand({
         region: activeRegion, profile: activeProfile, source: activeSource,
         instanceId, commands: cmdList,
-        comment: `AWS Ops Manager - ${new Date().toLocaleString()}`,
+        comment: `Cloud Ops Manager - ${new Date().toLocaleString()}`,
       })
       setPollingId(result.commandId)
       message.success(t('ec2.runCmd.sent'))
@@ -173,20 +177,23 @@ export function RunCommand({ instanceId }: { instanceId: string }): JSX.Element 
               {ssmStatus.lastPingDateTime ? new Date(ssmStatus.lastPingDateTime).toLocaleString() : '-'}
             </Descriptions.Item>
             <Descriptions.Item label={t('ec2.runCommand')}>
-              {ssmStatus.managed
+              {commandAllowed
                 ? <Tag color="green">{t('ec2.ssmAvailable')}</Tag>
-                : <Tag color="red">{t('ec2.runCmd.needAgent')}</Tag>
+                : <Tag color="red">{t('ec2.ssmUnavailable')}</Tag>
               }
             </Descriptions.Item>
           </Descriptions>
         )}
 
-        {ssmStatus && !ssmStatus.managed && (
+        {ssmStatus && !commandAllowed && (
           <Alert type="warning" style={{ marginTop: 12 }}
             message={t('ec2.runCmd.notManaged')}
             description={
               <div>
                 <p>{t('ec2.runCmd.notManagedHint')}</p>
+                {ssmStatus.errorType && (
+                  <p><Text type="secondary">检测错误：{ssmStatus.errorType}{ssmStatus.errorMessage ? ` - ${ssmStatus.errorMessage}` : ''}</Text></p>
+                )}
                 <ol>
                   <li>{t('ec2.runCmd.notManagedLi1')}（<Text code>sudo snap install amazon-ssm-agent</Text>）</li>
                   <li>{t('ec2.runCmd.notManagedLi2')}</li>
@@ -215,7 +222,7 @@ export function RunCommand({ instanceId }: { instanceId: string }): JSX.Element 
           onChange={(e) => setCommands(e.target.value)}
           placeholder={t('ec2.runCmd.placeholder')}
           rows={8}
-          disabled={!ssmStatus?.managed}
+          disabled={!commandAllowed}
           style={{ fontFamily: 'monospace', fontSize: 13, marginBottom: 12 }}
         />
 
@@ -225,7 +232,7 @@ export function RunCommand({ instanceId }: { instanceId: string }): JSX.Element 
             icon={executing ? <SyncOutlined spin /> : <SendOutlined />}
             onClick={handleExecute}
             loading={executing}
-            disabled={!ssmStatus?.managed || !commands.trim()}
+            disabled={!commandAllowed || !commands.trim()}
           >
             {executing ? t('ec2.runCmd.executing') : t('ec2.runCmd.execute')}
           </Button>

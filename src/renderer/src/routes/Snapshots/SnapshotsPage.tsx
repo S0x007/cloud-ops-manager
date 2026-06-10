@@ -85,7 +85,7 @@ export function SnapshotsPage(): JSX.Element {
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
         <Space><h2 style={{ margin: 0 }}>{t('snapshots.title')}</h2><Tag>{countLabel}</Tag></Space>
-        <Button icon={<ReloadOutlined />} onClick={load} loading={loading}>{t('common.refresh')}</Button>
+        <Button icon={<ReloadOutlined />} onClick={() => void load()} loading={loading}>{t('common.refresh')}</Button>
       </div>
       <Table dataSource={snapshots} rowKey="snapshotId" columns={columns} loading={loading} size="middle"
         pagination={{ pageSize: 20 }} locale={{ emptyText: <Empty description={t('snapshots.noSnapshots')} /> }} />

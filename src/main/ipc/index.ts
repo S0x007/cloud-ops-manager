@@ -13,9 +13,13 @@ import { registerSsmIpc } from './ssm.ipc'
 import { registerSsmCommandIpc } from './ssm-command.ipc'
 import { registerCloudWatchIpc } from './cloudwatch.ipc'
 import { registerAppIpc } from './app.ipc'
+import { registerUpdaterIpc } from './updater.ipc'
+import { registerCloudRouter } from './cloud-router'
+import { initAutoUpdater } from '../updater'
 
 export function registerAllIpcHandlers(): void {
   registerAppIpc()
+  registerUpdaterIpc()
   registerProfilesIpc()
   registerEc2Ipc()
   registerEc2SecurityGroupsIpc()
@@ -30,4 +34,5 @@ export function registerAllIpcHandlers(): void {
   registerSsmIpc()
   registerSsmCommandIpc()
   registerCloudWatchIpc()
+  registerCloudRouter()
 }

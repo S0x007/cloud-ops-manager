@@ -13,6 +13,8 @@ import {
   Modal,
   Input,
   Alert,
+  App,
+  Dropdown,
 } from 'antd'
 import {
   HomeOutlined,
@@ -25,12 +27,17 @@ import {
   EditOutlined,
   ReloadOutlined,
   FolderAddOutlined,
+  HistoryOutlined,
+  LinkOutlined,
+  SearchOutlined,
 } from '@ant-design/icons'
+import type { MenuProps } from 'antd'
 import { useS3 } from '../../hooks/useS3'
 import { useProfileStore } from '../../stores/profileStore'
 import { useRegionStore } from '../../stores/regionStore'
 import { useS3Store } from '../../stores/s3Store'
 import { FilePreviewModal } from '../../components/FilePreview/FilePreviewModal'
+import { VersionPanel } from './VersionPanel'
 import type { ColumnsType } from 'antd/es/table'
 import type { S3Object } from '../../stores/s3Store'
 import dayjs from 'dayjs'
@@ -62,6 +69,7 @@ export function S3ObjectBrowser(): JSX.Element {
   const navigate = useNavigate()
   const t = useT()
   const tf = useTf()
+  const { message } = App.useApp()
   const prefix = wildcard ?? ''
   const activeProfile = useProfileStore((s) => s.activeProfile)
   const activeSource = useProfileStore((s) => s.activeSource)
@@ -70,9 +78,11 @@ export function S3ObjectBrowser(): JSX.Element {
   const {
     objects,
     objectsTruncated,
+    listContinuationToken,
     isLoadingObjects,
     error,
     fetchObjects,
+    loadMoreObjects,
     deleteObject,
     deleteObjects,
     uploadFile,
@@ -88,10 +98,44 @@ export function S3ObjectBrowser(): JSX.Element {
   const [selectedRowKeys, setSelectedRowKeys] = useState<string[]>([])
   const [renameModal, setRenameModal] = useState<{ key: string; name: string } | null>(null)
   const [newName, setNewName] = useState('')
+  const [versionPanel, setVersionPanel] = useState<{ key: string; name: string } | null>(null)
+  const [nameFilter, setNameFilter] = useState('')
+
+  const filteredObjects = nameFilter.trim()
+    ? objects.filter((o) => getFileName(o.key).toLowerCase().includes(nameFilter.trim().toLowerCase()))
+    : objects
+
+  const copyPresignedUrl = useCallback(async (key: string, expiresIn: number) => {
+    if (!bucket || !activeProfile) return
+    try {
+      const url = await window.electronAPI.s3.getSignedUrl({
+        region: activeRegion,
+        profile: activeProfile,
+        source: activeSource,
+        bucket,
+        key,
+        expiresIn,
+      })
+      await navigator.clipboard.writeText(url)
+      message.success(t('s3.presignedCopied'))
+    } catch (err: unknown) {
+      message.error(err instanceof Error ? err.message : String(err))
+    }
+  }, [activeProfile, activeRegion, activeSource, bucket, message, t])
+
+  const presignMenu = useCallback((key: string): MenuProps['items'] => ([
+    { key: '15m', label: t('s3.presigned15m'), onClick: () => copyPresignedUrl(key, 900) },
+    { key: '1h', label: t('s3.presigned1h'), onClick: () => copyPresignedUrl(key, 3600) },
+    { key: '24h', label: t('s3.presigned24h'), onClick: () => copyPresignedUrl(key, 86400) },
+  ]), [copyPresignedUrl, t])
 
   useEffect(() => {
     if (bucket) fetchObjects(bucket, prefix)
   }, [bucket, prefix, fetchObjects])
+
+  useEffect(() => {
+    setNameFilter('')
+  }, [prefix, bucket])
 
   useEffect(() => () => {
     useS3Store.getState().setObjects([], false)
@@ -231,7 +275,7 @@ export function S3ObjectBrowser(): JSX.Element {
     {
       title: t('common.actionsCol'),
       key: 'actions',
-      width: 220,
+      width: 300,
       render: (_, record) => {
         const isDir = record.storageClass === 'DIRECTORY'
         const fname = getFileName(record.key)
@@ -266,6 +310,18 @@ export function S3ObjectBrowser(): JSX.Element {
                     size="small"
                     icon={<DownloadOutlined />}
                     onClick={() => bucket && downloadFile(bucket, record.key)}
+                  />
+                </Tooltip>
+                <Dropdown menu={{ items: presignMenu(record.key) }} trigger={['click']}>
+                  <Tooltip title={t('s3.presignedUrl')}>
+                    <Button size="small" icon={<LinkOutlined />} />
+                  </Tooltip>
+                </Dropdown>
+                <Tooltip title={t('s3.versions.history')}>
+                  <Button
+                    size="small"
+                    icon={<HistoryOutlined />}
+                    onClick={() => setVersionPanel({ key: record.key, name: fname })}
                   />
                 </Tooltip>
                 <Tooltip title={t('s3.rename')}>
@@ -327,7 +383,15 @@ export function S3ObjectBrowser(): JSX.Element {
           {prefix && <Text type="secondary">{prefix}</Text>}
           <Tag>{tf('common.items', { n: objects.length })}</Tag>
         </Space>
-        <Space>
+        <Space wrap>
+          <Input
+            allowClear
+            prefix={<SearchOutlined />}
+            placeholder={t('s3.filterName')}
+            value={nameFilter}
+            onChange={(e) => setNameFilter(e.target.value)}
+            style={{ width: 220 }}
+          />
           {selectedRowKeys.length > 0 && (
             <Popconfirm
               title={tf('s3.confirmDeleteSelected', { n: selectedRowKeys.length })}
@@ -376,13 +440,21 @@ export function S3ObjectBrowser(): JSX.Element {
           type="warning"
           showIcon
           message={t('s3.listTruncated')}
+          description={tf('s3.listTruncatedDesc', { n: objects.length })}
+          action={
+            listContinuationToken ? (
+              <Button size="small" onClick={loadMoreObjects} loading={isLoadingObjects}>
+                {t('s3.loadMore')}
+              </Button>
+            ) : undefined
+          }
           style={{ marginBottom: 16 }}
         />
       )}
 
       <Table<S3Object>
         columns={columns}
-        dataSource={objects}
+        dataSource={filteredObjects}
         rowKey="key"
         loading={isLoadingObjects}
         pagination={{ pageSize: 100, showSizeChanger: true, pageSizeOptions: ['50', '100', '200'] }}
@@ -457,6 +529,16 @@ export function S3ObjectBrowser(): JSX.Element {
           onSaved={() => {
             if (bucket) fetchObjects(bucket, prefix)
           }}
+        />
+      )}
+
+      {versionPanel && bucket && (
+        <VersionPanel
+          open
+          bucket={bucket}
+          objectKey={versionPanel.key}
+          fileName={versionPanel.name}
+          onClose={() => setVersionPanel(null)}
         />
       )}
     </div>

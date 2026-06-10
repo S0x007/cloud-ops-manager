@@ -1,7 +1,10 @@
-import { electronAPI } from '../preload/api'
+/// <reference types="vite/client" />
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+export {}
 
 declare global {
   interface Window {
-    electronAPI: typeof electronAPI
+    electronAPI: any
   }
 }

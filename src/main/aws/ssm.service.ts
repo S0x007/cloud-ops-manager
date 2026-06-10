@@ -7,13 +7,21 @@ import {
 } from '@aws-sdk/client-ssm'
 import { clientFactory } from './client.factory'
 
+function formatSsmDateTime(value: Date | string | undefined): string | undefined {
+  if (value == null) return undefined
+  return value instanceof Date ? value.toISOString() : value
+}
+
 // 检查实例是否被 SSM 管理
 export async function checkSsmManaged(instanceId: string, region: string): Promise<{
   managed: boolean
+  online: boolean
   agentVersion?: string
   platformName?: string
   pingStatus?: string
   lastPingDateTime?: string
+  errorType?: string
+  errorMessage?: string
 }> {
   try {
     const client = clientFactory.getClient(SSMClient, { region })
@@ -21,15 +29,29 @@ export async function checkSsmManaged(instanceId: string, region: string): Promi
       Filters: [{ Key: 'InstanceIds', Values: [instanceId] }],
     }))
     const info = resp.InstanceInformationList?.[0]
+    const pingStatus = info?.PingStatus
     return {
       managed: !!info,
+      online: !!info && pingStatus === 'Online',
       agentVersion: info?.AgentVersion,
       platformName: info?.PlatformName,
-      pingStatus: info?.PingStatus,
+      pingStatus,
       lastPingDateTime: info?.LastPingDateTime?.toISOString(),
     }
-  } catch {
-    return { managed: false }
+  } catch (err: any) {
+    const name = err?.name || ''
+    const message = err?.message || String(err)
+    let errorType = 'UNKNOWN'
+    if (name.includes('AccessDenied')) errorType = 'ACCESS_DENIED'
+    else if (name.includes('Auth')) errorType = 'AUTH'
+    else if (name.includes('Timeout') || name.includes('Networking')) errorType = 'NETWORK'
+    else if (name.includes('Validation') || message.includes('Invalid')) errorType = 'VALIDATION'
+    return {
+      managed: false,
+      online: false,
+      errorType,
+      errorMessage: message,
+    }
   }
 }
 
@@ -83,8 +105,8 @@ export async function getCommandInvocation(
     status: resp.Status ?? 'Unknown',
     output: (resp.StandardOutputContent ?? '') + (resp.StandardErrorContent ? '\n[STDERR]\n' + resp.StandardErrorContent : ''),
     error: resp.StandardErrorContent ?? '',
-    startTime: resp.ExecutionStartDateTime?.toISOString(),
-    endTime: resp.ExecutionEndDateTime?.toISOString(),
+    startTime: formatSsmDateTime(resp.ExecutionStartDateTime),
+    endTime: formatSsmDateTime(resp.ExecutionEndDateTime),
   }
 }
 

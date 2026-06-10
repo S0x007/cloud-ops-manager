@@ -29,6 +29,7 @@ import { ConsoleOutput } from './ConsoleOutput'
 import { EC2MetricsTab } from './EC2MetricsTab'
 import { InlineVolumes } from './InlineVolumes'
 import { useT } from '../../i18n'
+import { formatAwsInstanceSpec } from '../../lib/instanceSpec'
 import dayjs from 'dayjs'
 
 const { Text } = Typography
@@ -66,6 +67,7 @@ export function EC2InstanceDetail(): JSX.Element {
   const [instance, setInstance] = useState<EC2Instance | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [specDisplay, setSpecDisplay] = useState('-')
 
   const loadInstance = useCallback(async () => {
     if (!instanceId) return
@@ -79,13 +81,27 @@ export function EC2InstanceDetail(): JSX.Element {
         instanceId,
       })
       setInstance(result)
+      if (result?.instanceType) {
+        window.electronAPI.ec2.describeInstanceTypes({
+          region: activeRegion,
+          profile: activeProfile,
+          source: activeSource,
+          types: [result.instanceType],
+        }).then((map: Record<string, { vcpu: number; memoryGiB: number }>) => {
+          setSpecDisplay(formatAwsInstanceSpec(result.instanceType, t, map[result.instanceType]))
+        }).catch(() => {
+          setSpecDisplay(formatAwsInstanceSpec(result.instanceType, t))
+        })
+      } else {
+        setSpecDisplay('-')
+      }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err)
       setError(msg)
     } finally {
       setLoading(false)
     }
-  }, [instanceId, activeRegion, activeProfile, activeSource])
+  }, [instanceId, activeRegion, activeProfile, activeSource, t])
 
   useEffect(() => {
     loadInstance()
@@ -114,7 +130,7 @@ export function EC2InstanceDetail(): JSX.Element {
                 <Descriptions column={2} bordered size="small">
                   <Descriptions.Item label={t('ec2.instanceId')}>{instance.instanceId}</Descriptions.Item>
                   <Descriptions.Item label={t('common.name')}>{instance.name || '-'}</Descriptions.Item>
-                  <Descriptions.Item label={t('ec2.instanceType')}>{instance.instanceType}</Descriptions.Item>
+                  <Descriptions.Item label={t('ec2.spec')}>{specDisplay}</Descriptions.Item>
                   <Descriptions.Item label={t('ec2.platform')}>
                     {instance.platform === 'windows' ? 'Windows' : 'Linux'}
                   </Descriptions.Item>
@@ -197,7 +213,7 @@ export function EC2InstanceDetail(): JSX.Element {
             },
           ]
         : [],
-    [instance, t],
+    [instance, specDisplay, t],
   )
 
   if (loading) {

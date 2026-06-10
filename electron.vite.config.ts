@@ -10,7 +10,8 @@ export default defineConfig({
         input: {
           index: resolve(__dirname, 'src/main/index.ts'),
         },
-        external: ['electron', 'electron-store'],
+        // ws/ssh2 含可选 native 依赖，打包进 bundle 会在运行时解析 bufferutil 失败
+        external: ['electron', 'electron-store', 'ws', 'ssh2'],
       },
     },
   },

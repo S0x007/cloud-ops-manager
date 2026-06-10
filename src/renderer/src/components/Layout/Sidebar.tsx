@@ -1,52 +1,51 @@
 import { useNavigate, useLocation } from 'react-router-dom'
 import { Layout, Menu } from 'antd'
 import {
-  CloudServerOutlined,
-  FolderOutlined,
-  ContainerOutlined,
-  HddOutlined,
-  CameraOutlined, SafetyOutlined, GlobalOutlined, KeyOutlined,
-  ApartmentOutlined, BuildOutlined, SettingOutlined,
+  CloudServerOutlined, FolderOutlined, ContainerOutlined,
+  HddOutlined, CameraOutlined, SafetyOutlined, GlobalOutlined,
+  KeyOutlined, ApartmentOutlined, BuildOutlined, SettingOutlined,
+  DatabaseOutlined,
 } from '@ant-design/icons'
 import type { MenuProps } from 'antd'
+import { useProviderStore } from '../../stores/providerStore'
+import { ALL_PROVIDERS } from '../../providers/huawei'
 import { useT } from '../../i18n'
+import appIcon from '../../../favicon.png'
 
 const { Sider } = Layout
 
 type MenuItem = Required<MenuProps>['items'][number]
 
-// 选中的 CSS 高亮
-const selectedStyle: React.CSSProperties = {
-  background: 'rgba(22, 119, 255, 0.12)',
-  borderRadius: 6,
-  fontWeight: 600,
+/** 图标名 → React 组件 */
+const ICONS: Record<string, React.ReactNode> = {
+  CloudServerOutlined: <CloudServerOutlined />,
+  FolderOutlined: <FolderOutlined />,
+  ContainerOutlined: <ContainerOutlined />,
+  HddOutlined: <HddOutlined />,
+  CameraOutlined: <CameraOutlined />,
+  SafetyOutlined: <SafetyOutlined />,
+  GlobalOutlined: <GlobalOutlined />,
+  KeyOutlined: <KeyOutlined />,
+  ApartmentOutlined: <ApartmentOutlined />,
+  BuildOutlined: <BuildOutlined />,
+  SettingOutlined: <SettingOutlined />,
+  DatabaseOutlined: <DatabaseOutlined />,
 }
 
 function useMenuItems(): MenuItem[] {
   const t = useT()
-  return [
-    { key: 'group-compute', label: t('sidebar.compute'), type: 'group', children: [
-      { key: '/ec2', icon: <CloudServerOutlined />, label: t('sidebar.ec2') },
-      { key: '/ecs', icon: <ContainerOutlined />, label: t('sidebar.ecs') },
-    ]},
-    { key: 'group-storage', label: t('sidebar.storage'), type: 'group', children: [
-      { key: '/s3', icon: <FolderOutlined />, label: t('sidebar.s3') },
-      { key: '/volumes', icon: <HddOutlined />, label: t('sidebar.ebs') },
-      { key: '/snapshots', icon: <CameraOutlined />, label: t('sidebar.snapshots') },
-    ]},
-    { key: 'group-network', label: t('sidebar.network'), type: 'group', children: [
-      { key: '/security-groups', icon: <SafetyOutlined />, label: t('sidebar.sg') },
-      { key: '/elastic-ips', icon: <GlobalOutlined />, label: t('sidebar.eip') },
-      { key: '/key-pairs', icon: <KeyOutlined />, label: t('sidebar.keypairs') },
-      { key: '/network', icon: <ApartmentOutlined />, label: t('sidebar.network2') },
-    ]},
-    { key: 'group-other', label: t('sidebar.other'), type: 'group', children: [
-      { key: '/amis', icon: <BuildOutlined />, label: t('sidebar.ami') },
-    ]},
-    { key: 'group-settings', label: t('sidebar.settings'), type: 'group', children: [
-      { key: '/settings', icon: <SettingOutlined />, label: t('sidebar.credentials') },
-    ]},
-  ]
+  const currentProvider = useProviderStore((s) => s.currentProvider)
+  const meta = ALL_PROVIDERS[currentProvider] || ALL_PROVIDERS['aws']
+  return meta.menus.map((group) => ({
+    key: group.key,
+    label: t(group.labelKey),
+    type: 'group' as const,
+    children: group.children.map((item) => ({
+      key: item.key,
+      icon: ICONS[item.icon] || null,
+      label: t(item.labelKey),
+    })),
+  }))
 }
 
 const isMacOS = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform)
@@ -59,12 +58,14 @@ export function Sidebar({ collapsed }: { collapsed: boolean }): JSX.Element {
   const pathname = location.pathname
   const selectedKey = (() => {
     if (pathname === '/') return '/'
-    const parts = pathname.split('/')
-    const base = '/' + (parts[1] || '')
     const allKeys = menuItems.flatMap((item: any) =>
       item.children?.map((child: any) => child.key) ?? []
     )
     if (allKeys.includes(pathname)) return pathname
+    // 详情页等高亮对应列表菜单
+    const nested = allKeys.find((key) => key !== '/' && pathname.startsWith(`${key}/`))
+    if (nested) return nested
+    const base = '/' + (pathname.split('/')[1] || '')
     if (allKeys.includes(base)) return base
     return '/'
   })()
@@ -76,38 +77,28 @@ export function Sidebar({ collapsed }: { collapsed: boolean }): JSX.Element {
       collapsed={collapsed}
       theme="dark"
       style={{
-        height: '100vh',
-        position: 'sticky',
-        top: 0,
-        left: 0,
-        transition: 'all 0.2s',
+        height: '100vh', position: 'sticky', top: 0, left: 0, transition: 'all 0.2s',
       }}
       trigger={null}
     >
-      {/* 侧栏顶区：交通灯行 + 品牌行 */}
       <div className={`sidebar-chrome${isMacOS ? '' : ' no-mac-titlebar'}`}>
         {isMacOS && <div className="sidebar-titlebar" aria-hidden />}
         <div className={`sidebar-brand${collapsed ? ' is-collapsed' : ''}`}>
           <div className="sidebar-brand-inner" onClick={() => navigate('/')}>
             <div className="sidebar-brand-mark">
-              <CloudServerOutlined />
+              <img src={appIcon} alt="" className="sidebar-brand-icon" />
             </div>
-            {!collapsed && <span className="sidebar-brand-text">AWS Ops</span>}
+            {!collapsed && <span className="sidebar-brand-text">Cloud Ops Manager</span>}
           </div>
         </div>
       </div>
 
-      {/* 导航菜单 */}
       <Menu
-        theme="dark"
-        mode="inline"
+        theme="dark" mode="inline"
         selectedKeys={[selectedKey]}
         items={menuItems}
         onClick={({ key }) => navigate(key)}
-        style={{
-          borderInlineEnd: 'none',
-          paddingTop: 8,
-        }}
+        style={{ borderInlineEnd: 'none', paddingTop: 8 }}
       />
     </Sider>
   )

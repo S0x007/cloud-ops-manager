@@ -30,9 +30,36 @@ export interface S3Object {
 export interface ListObjectsResult {
   objects: S3Object[]
   truncated: boolean
+  nextContinuationToken?: string
 }
 
-const MAX_LIST_OBJECTS = 2000
+const DEFAULT_PAGE_SIZE = 2000
+export const S3_LOAD_MORE_SIZE = 1000
+
+function pageRowsFromResponse(response: {
+  CommonPrefixes?: { Prefix?: string }[]
+  Contents?: { Key?: string; Size?: number; LastModified?: Date; StorageClass?: string }[]
+}, prefix: string): S3Object[] {
+  const rows: S3Object[] = []
+  for (const prefixItem of response.CommonPrefixes ?? []) {
+    rows.push({
+      key: prefixItem.Prefix ?? '',
+      size: 0,
+      lastModified: '',
+      storageClass: 'DIRECTORY',
+    })
+  }
+  for (const obj of response.Contents ?? []) {
+    if (obj.Key === prefix) continue
+    rows.push({
+      key: obj.Key ?? '',
+      size: obj.Size ?? 0,
+      lastModified: obj.LastModified?.toISOString() ?? '',
+      storageClass: obj.StorageClass ?? 'STANDARD',
+    })
+  }
+  return rows
+}
 
 // 全局 bucket region 缓存（5 分钟 TTL）
 const bucketRegionCache = new Map<string, { region: string; ts: number }>()
@@ -158,61 +185,47 @@ export async function getBucketRegion(bucket: string): Promise<string> {
 export async function listObjects(
   bucket: string,
   prefix: string,
+  options?: { continuationToken?: string; maxItems?: number },
 ): Promise<ListObjectsResult> {
   const region = await resolveBucketRegion(bucket)
   const client = clientFactory.getClient(S3Client, { region })
   const objects: S3Object[] = []
-  let continuationToken: string | undefined
-  let truncated = false
+  const maxItems = options?.maxItems ?? DEFAULT_PAGE_SIZE
+  let continuationToken = options?.continuationToken
 
-  do {
-    const cmd = new ListObjectsV2Command({
+  while (objects.length < maxItems) {
+    const response = await client.send(new ListObjectsV2Command({
       Bucket: bucket,
       Prefix: prefix || undefined,
       Delimiter: '/',
       ContinuationToken: continuationToken,
       MaxKeys: 1000,
-    })
-    const response = await client.send(cmd)
+    }))
 
-    for (const prefixItem of response.CommonPrefixes ?? []) {
-      if (objects.length >= MAX_LIST_OBJECTS) {
-        truncated = true
-        break
-      }
-      objects.push({
-        key: prefixItem.Prefix ?? '',
-        size: 0,
-        lastModified: '',
-        storageClass: 'DIRECTORY',
-      })
+    for (const row of pageRowsFromResponse(response, prefix)) {
+      if (objects.length >= maxItems) break
+      objects.push(row)
     }
 
-    if (truncated) break
-
-    for (const obj of response.Contents ?? []) {
-      if (obj.Key === prefix) continue
-      if (objects.length >= MAX_LIST_OBJECTS) {
-        truncated = true
-        break
+    const hasMore = !!response.IsTruncated && !!response.NextContinuationToken
+    if (objects.length >= maxItems && hasMore) {
+      return {
+        objects,
+        truncated: true,
+        nextContinuationToken: response.NextContinuationToken,
       }
-      objects.push({
-        key: obj.Key ?? '',
-        size: obj.Size ?? 0,
-        lastModified: obj.LastModified?.toISOString() ?? '',
-        storageClass: obj.StorageClass ?? 'STANDARD',
-      })
     }
-
-    if (truncated) break
+    if (!hasMore) {
+      return { objects, truncated: false }
+    }
     continuationToken = response.NextContinuationToken
-  } while (continuationToken)
-
-  if (continuationToken && !truncated) {
-    truncated = true
   }
 
-  return { objects, truncated }
+  return {
+    objects,
+    truncated: true,
+    nextContinuationToken: continuationToken,
+  }
 }
 
 export async function deleteObject(
@@ -258,12 +271,17 @@ export async function downloadFile(
   key: string,
   savePath: string,
   onProgress?: (loaded: number, total: number) => void,
+  versionId?: string,
 ): Promise<void> {
   const region = await resolveBucketRegion(bucket)
   const client = clientFactory.getClient(S3Client, { region })
 
   const response = await client.send(
-    new GetObjectCommand({ Bucket: bucket, Key: key }),
+    new GetObjectCommand({
+      Bucket: bucket,
+      Key: key,
+      ...(versionId ? { VersionId: versionId } : {}),
+    }),
   )
   const body = response.Body
   const totalSize = response.ContentLength ?? 0
@@ -299,13 +317,15 @@ export async function downloadFile(
 export async function generateSignedUrl(
   bucket: string,
   key: string,
+  expiresIn = 3600,
 ): Promise<string> {
   const region = await resolveBucketRegion(bucket)
   const client = clientFactory.getClient(S3Client, { region })
+  const ttl = Math.min(Math.max(expiresIn, 60), 604800)
   return getSignedUrl(
     client,
     new GetObjectCommand({ Bucket: bucket, Key: key }),
-    { expiresIn: 3600 },
+    { expiresIn: ttl },
   )
 }
 

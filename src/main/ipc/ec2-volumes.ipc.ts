@@ -3,6 +3,7 @@ import {
   EC2Client, DescribeVolumesCommand, CreateVolumeCommand, DeleteVolumeCommand,
   AttachVolumeCommand, DetachVolumeCommand,
   DescribeSnapshotsCommand, CreateSnapshotCommand, DeleteSnapshotCommand,
+  type VolumeType,
 } from '@aws-sdk/client-ec2'
 import { clientFactory } from '../aws/client.factory'
 import { getCached, setCache } from '../store/api-cache'
@@ -75,7 +76,7 @@ export function registerEc2VolumesIpc(): void {
       setSource(params)
       const client = clientFactory.getClient(EC2Client, { region: params.region })
       const resp = await client.send(new CreateVolumeCommand({
-        Size: params.size, VolumeType: params.volumeType, AvailabilityZone: params.availabilityZone,
+        Size: params.size, VolumeType: params.volumeType as VolumeType, AvailabilityZone: params.availabilityZone,
         Iops: params.iops, Encrypted: params.encrypted, SnapshotId: params.snapshotId,
       }))
       return { volumeId: resp.VolumeId ?? '' }

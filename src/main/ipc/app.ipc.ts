@@ -1,4 +1,4 @@
-import { ipcMain, dialog, BrowserWindow } from 'electron'
+import { ipcMain, dialog, BrowserWindow, shell } from 'electron'
 
 const store: Record<string, unknown> = {}
 
@@ -54,5 +54,12 @@ export function registerAppIpc(): void {
       })
       return result.canceled ? null : result.filePath
     } catch (err) { throw wrapErr(err, '保存文件对话框失败') }
+  })
+
+  ipcMain.handle('app:open-external', (_event, url: string) => {
+    try {
+      if (!url || !/^https?:\/\//i.test(url)) throw new Error('无效的 URL')
+      shell.openExternal(url)
+    } catch (err) { throw wrapErr(err, '打开外部链接失败') }
   })
 }

@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useMemo } from 'react'
+import { useEffect, useCallback, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Table,
@@ -11,6 +11,8 @@ import {
   Badge,
   Typography,
   Empty,
+  Modal,
+  App,
 } from 'antd'
 import {
   PlayCircleOutlined, PauseCircleOutlined, ReloadOutlined, SyncOutlined,
@@ -26,20 +28,9 @@ import type { ColumnsType } from 'antd/es/table'
 import type { EC2Instance } from '../../stores/ec2Store'
 import dayjs from 'dayjs'
 import { useT, useTf } from '../../i18n'
+import { formatAwsInstanceSpec } from '../../lib/instanceSpec'
 
 const { Text } = Typography
-
-function describeInstanceType(type: string, t: (key: string) => string): string {
-  const base = type.split('.')[0].replace(/\d/g, '')
-  const sizePart = type.split('.')[1] || ''
-  const famName = t(`ec2.family.${base}`) !== `ec2.family.${base}` ? t(`ec2.family.${base}`) : base.toUpperCase()
-  const mult = sizePart.includes('xlarge') ? parseInt(sizePart) || 1 : 0
-  const vCpu = mult > 0 ? mult * 4 : sizePart.includes('large') ? 2 : sizePart.includes('medium') ? 2 : 1
-  const mem = mult > 0 && base === 'r' ? mult * 32 : mult > 0 && base === 'x' ? mult * 64 :
-    mult > 0 && base === 't' ? mult * 4 : mult > 0 ? mult * 16 :
-    sizePart.includes('large') ? 8 : sizePart.includes('medium') ? 4 : sizePart.includes('small') ? 2 : 1
-  return t('ec2.specFormat').replace('{vcpu}', String(vCpu)).replace('{mem}', String(mem)).replace('{family}', famName)
-}
 
 function stateLabel(state: string, t: (key: string) => string): string {
   const map: Record<string, string> = {
@@ -56,10 +47,17 @@ function stateLabel(state: string, t: (key: string) => string): string {
 
 export function EC2Page(): JSX.Element | null {
   const navigate = useNavigate()
+  const { message } = App.useApp()
   const activeProfile = useProfileStore((s) => s.activeProfile)
+  const activeSource = useProfileStore((s) => s.activeSource)
   const activeRegion = useRegionStore((s) => s.activeRegion)
   const t = useT()
   const tf = useTf()
+
+  const [terminateTarget, setTerminateTarget] = useState<EC2Instance | null>(null)
+  const [terminateConfirmId, setTerminateConfirmId] = useState('')
+  const [terminating, setTerminating] = useState(false)
+  const [typeSpecs, setTypeSpecs] = useState<Record<string, string>>({})
 
   const {
     instances,
@@ -73,7 +71,27 @@ export function EC2Page(): JSX.Element | null {
     startInstance,
     stopInstance,
     rebootInstance,
+    terminateInstance,
   } = useEC2()
+
+  const openTerminate = useCallback((record: EC2Instance) => {
+    setTerminateTarget(record)
+    setTerminateConfirmId('')
+  }, [])
+
+  const handleTerminate = useCallback(async () => {
+    if (!terminateTarget) return
+    setTerminating(true)
+    try {
+      await terminateInstance(terminateTarget.instanceId)
+      message.success(t('ec2.terminateSuccess'))
+      setTerminateTarget(null)
+    } catch (err: unknown) {
+      message.error(err instanceof Error ? err.message : String(err))
+    } finally {
+      setTerminating(false)
+    }
+  }, [terminateTarget, terminateInstance, message, t])
 
   const contextMenu = useContextMenu()
   const handleRowContextMenu = useCallback((record: EC2Instance, e: React.MouseEvent) => {
@@ -87,17 +105,44 @@ export function EC2Page(): JSX.Element | null {
       ] : []),
       ...(record.state === 'stopped' ? [
         { key: 'start', label: t('ec2.startInstance'), icon: <PlayCircleOutlined />, onClick: () => startInstance(record.instanceId) },
-        { key: 'terminate', label: t('ec2.terminateInstance'), icon: <StopOutlined />, danger: true, onClick: () => {/* TODO */} },
+        { key: 'terminate', label: t('ec2.terminateInstance'), icon: <StopOutlined />, danger: true, onClick: () => openTerminate(record) },
       ] : []),
       { key: 'div2', label: '', divider: true, onClick: () => {} },
       { key: 'detail', label: t('ec2.viewDetail'), onClick: () => navigate(`/ec2/${record.instanceId}`) },
     ]
     contextMenu.show(e, items)
-  }, [contextMenu, navigate, startInstance, stopInstance, rebootInstance, t])
+  }, [contextMenu, navigate, startInstance, stopInstance, rebootInstance, openTerminate, t])
 
   useEffect(() => {
     fetchInstances()
   }, [fetchInstances])
+
+  useEffect(() => {
+    if (!instances.length || !activeProfile) {
+      setTypeSpecs({})
+      return
+    }
+    const types = [...new Set(instances.map((i) => i.instanceType).filter(Boolean))]
+    if (types.length === 0) return
+    window.electronAPI.ec2.describeInstanceTypes({
+      region: activeRegion,
+      profile: activeProfile,
+      source: activeSource,
+      types,
+    }).then((map: Record<string, { vcpu: number; memoryGiB: number }>) => {
+      const specs: Record<string, string> = {}
+      for (const type of types) {
+        specs[type] = formatAwsInstanceSpec(type, t, map[type])
+      }
+      setTypeSpecs(specs)
+    }).catch(() => {
+      const specs: Record<string, string> = {}
+      for (const type of types) {
+        specs[type] = formatAwsInstanceSpec(type, t)
+      }
+      setTypeSpecs(specs)
+    })
+  }, [instances, activeProfile, activeSource, activeRegion, t])
 
   const columns = useMemo<ColumnsType<EC2Instance>>(
     () => [
@@ -135,16 +180,12 @@ export function EC2Page(): JSX.Element | null {
       {
         title: t('ec2.type'),
         key: 'instanceType',
-        width: 160,
-        render: (_: unknown, record: EC2Instance) => {
-          const desc = describeInstanceType(record.instanceType, t)
-          return (
-            <div>
-              <div style={{ fontFamily: 'monospace', fontSize: 13, lineHeight: '18px' }}>{record.instanceType}</div>
-              <div style={{ fontSize: 11, color: '#8c8c8c', lineHeight: '14px', marginTop: 2 }}>{desc}</div>
-            </div>
-          )
-        },
+        width: 180,
+        render: (_: unknown, record: EC2Instance) => (
+          <span style={{ fontSize: 13 }}>
+            {typeSpecs[record.instanceType] ?? formatAwsInstanceSpec(record.instanceType, t)}
+          </span>
+        ),
       },
       {
         title: t('ec2.platform'),
@@ -193,14 +234,24 @@ export function EC2Page(): JSX.Element | null {
         render: (_, record) => (
           <Space size="small">
             {record.state === 'stopped' && (
-              <Tooltip title={t('ec2.start')}>
-                <Button
-                  size="small"
-                  type="primary"
-                  icon={<PlayCircleOutlined />}
-                  onClick={() => startInstance(record.instanceId)}
-                />
-              </Tooltip>
+              <>
+                <Tooltip title={t('ec2.start')}>
+                  <Button
+                    size="small"
+                    type="primary"
+                    icon={<PlayCircleOutlined />}
+                    onClick={() => startInstance(record.instanceId)}
+                  />
+                </Tooltip>
+                <Tooltip title={t('ec2.terminateInstance')}>
+                  <Button
+                    size="small"
+                    danger
+                    icon={<StopOutlined />}
+                    onClick={() => openTerminate(record)}
+                  />
+                </Tooltip>
+              </>
             )}
             {record.state === 'running' && (
               <>
@@ -243,7 +294,7 @@ export function EC2Page(): JSX.Element | null {
         ),
       },
     ],
-    [startInstance, stopInstance, rebootInstance, navigate, t],
+    [startInstance, stopInstance, rebootInstance, openTerminate, navigate, t, typeSpecs],
   )
 
   const countLabel = t('common.unit')
@@ -309,7 +360,7 @@ export function EC2Page(): JSX.Element | null {
           }}
         >
           {error}
-          <Button type="link" onClick={fetchInstances} style={{ marginLeft: 12 }}>
+          <Button type="link" onClick={() => void fetchInstances()} style={{ marginLeft: 12 }}>
             {t('common.retry')}
           </Button>
         </div>
@@ -344,6 +395,33 @@ export function EC2Page(): JSX.Element | null {
         size="middle"
       />
       <ContextMenu {...contextMenu} />
+
+      <Modal
+        title={t('ec2.terminateInstance')}
+        open={!!terminateTarget}
+        onCancel={() => setTerminateTarget(null)}
+        onOk={handleTerminate}
+        okText={t('ec2.terminate')}
+        okButtonProps={{
+          danger: true,
+          disabled: !terminateTarget || terminateConfirmId !== terminateTarget.instanceId,
+          loading: terminating,
+        }}
+        destroyOnClose
+      >
+        <p>{t('ec2.confirmTerminate')}</p>
+        <p>
+          <Text code>{terminateTarget?.instanceId}</Text>
+          {terminateTarget?.name ? ` (${terminateTarget.name})` : ''}
+        </p>
+        <p style={{ marginTop: 12, color: '#8c8c8c', fontSize: 13 }}>{t('ec2.confirmTerminateHint')}</p>
+        <Input
+          placeholder={t('ec2.instanceId')}
+          value={terminateConfirmId}
+          onChange={(e) => setTerminateConfirmId(e.target.value)}
+          style={{ marginTop: 8 }}
+        />
+      </Modal>
     </div>
   )
 }

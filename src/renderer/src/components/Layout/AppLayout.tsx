@@ -25,7 +25,7 @@ export function AppLayout({ isDark, onToggleTheme, children }: AppLayoutProps): 
       {/* 侧边栏 */}
       <Sidebar collapsed={collapsed} />
 
-      <Layout>
+      <Layout style={{ minWidth: 0, flex: 1 }}>
         {/* 顶部栏 */}
         <HeaderBar
           isDark={isDark}

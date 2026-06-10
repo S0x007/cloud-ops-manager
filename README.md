@@ -1,59 +1,85 @@
-<p align="center">
-  <img src="resources/icon.png" width="128" alt="AWS Ops Manager" />
-</p>
+# Cloud Ops Manager
 
-<h1 align="center">AWS Ops Manager</h1>
+[简体中文](./README.zh-CN.md)
 
-<p align="center">
-  A cross-platform desktop client for day-to-day AWS operations — multi-account, multi-region, offline-friendly caching.
-</p>
-
-<p align="center">
-  <a href="./README.zh-CN.md">简体中文</a>
-</p>
-
-<p align="center">
-  <a href="https://github.com/S0x007/aws-ops-manager/actions"><img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey" alt="Platforms" /></a>
-  <a href="https://github.com/S0x007/aws-ops-manager/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="License" /></a>
-  <img src="https://img.shields.io/badge/electron-31.x-blue" alt="Electron" />
-  <img src="https://img.shields.io/badge/react-18.x-61dafb" alt="React" />
-  <img src="https://img.shields.io/badge/i18n-en%20%7C%20zh--CN-orange" alt="i18n" />
-</p>
+> Repository name remains `aws-ops-manager` for history; the application window title is **Cloud Ops Manager**.
 
 ---
 
-## Overview
+## Disclaimer
 
-**AWS Ops Manager** is an Electron desktop app inspired by cloud vendor ops clients (e.g. Alibaba Cloud Client). It wraps common AWS workflows — EC2, S3, EBS, networking, SSM — in a single UI with credential switching, response caching, and bilingual support (**English / 简体中文**).
+**Cloud Ops Manager** is intended for **authorized** day-to-day cloud operations only — inventory, configuration, and maintenance on resources you are permitted to manage.
 
-> **Note:** This tool calls AWS APIs with **your** credentials. It does not provide AWS accounts or bypass IAM. Use only on resources you are authorized to manage.
+**Do not use this tool to access any cloud account or system without authorization.** You are solely responsible for any direct or indirect consequences of misuse.
 
----
-
-## Features
-
-| Area | Highlights |
-|------|------------|
-| **EC2** | Multi-region instance list with type hints · start/stop/reboot · 8-tab detail view · CloudWatch charts · SSM terminal & Run Command |
-| **S3** | Bucket browser · upload/download with progress · inline file editor · bucket policy, encryption, lifecycle, static website (7 tabs) |
-| **EBS & Snapshots** | Volume create/attach/detach · snapshot from volume |
-| **Security Groups** | Inbound/outbound rules · 8 presets (SSH/HTTP/HTTPS/…) · create/delete groups & rules |
-| **Network** | VPC, subnets, route tables, IGW, NAT gateways |
-| **Elastic IPs & Key Pairs** | Allocate/associate/release · create/import key pairs (.pem download) |
-| **AMI** | List owned AMIs · cross-region copy · deregister |
-| **ECS** | Cluster list with service/task counts |
-| **Credentials** | `~/.aws` profiles + **AES-256-GCM** encrypted custom keys (machine-bound) |
-| **UX** | `⌘K` command palette · sidebar navigation · breadcrumbs · dark/light theme · API cache (5 min TTL) |
+#### Comply with applicable laws (e.g. cybersecurity regulations). Do not use for illegal intrusion or unauthorized testing.
 
 ---
 
-## Screenshots
+## Introduction
 
-> Add screenshots under `screenshots/` before your first release.
+A **multi-cloud ops desktop client** with two main areas:
 
-| Dashboard | EC2 | S3 |
-|-----------|-----|-----|
-| *coming soon* | *coming soon* | *coming soon* |
+| Module | Scope |
+|--------|--------|
+| **Object storage** | **S3 / OBS** — buckets, object browser, upload, download, preview, edit, batch delete |
+| **Compute & services** | **EC2 / ECS / RDS** — instance list, start/stop, detail, Run Command, SSM terminal, VNC |
+
+Header switcher: **AWS / Huawei Cloud**. Credentials stored with **AES-256-GCM**. UI: **English / 简体中文**.
+
+---
+
+## Architecture
+
+`Electron` + `React` + `Ant Design` + `TypeScript` + `Node.js` + `AWS SDK v3` + `Huawei Cloud SDK` + `OBS SDK` + `Zustand`
+
+```
+Renderer (React)
+    ├─ AWS pages ──► electronAPI.{ec2,s3,...} ──► IPC ──► AWS SDK v3
+    └─ Huawei pages ► electronAPI.cloud.invoke ──► ProviderRegistry ──► Huawei SDK / OBS
+```
+
+---
+
+## Overview diagram
+
+> Put screenshots under `image/` and update paths below.
+
+![Overview](./image/overview.png)
+
+---
+
+## Implemented features
+
+**AWS:** EC2 list/start/stop/reboot/terminate, detail tabs, CloudWatch, SSM terminal & Run Command, S3 buckets & objects, EBS volumes & snapshots, security groups, VPC (read-only), Elastic IPs, key pairs, AMI, ECS clusters/services/tasks drill-down
+
+**Huawei Cloud:** ECS list/create/detail, VNC, COC run command, volumes, EIP bind, OBS browser/upload/download/preview, RDS instances/backups/parameters/users, dedicated EIP page, EVS/VPC/IMS lists, COC presets & history
+
+**Cross-cutting:** Credential manager per provider, `⌘K` command palette, dark/light theme, list API cache & manual refresh
+
+---
+
+## Object storage module
+
+![S3 buckets](./image/s3-buckets.png)
+
+![S3 object browser](./image/s3-objects.png)
+
+![OBS browser](./image/obs-browser.png)
+
+---
+
+## Compute & services module
+
+![Dashboard](./image/dashboard.png)
+
+![EC2 list](./image/ec2-list.png)
+
+![EC2 detail & SSM](./image/ec2-detail.png)
+
+![Huawei ECS](./image/huawei-ecs.png)
+
+![Huawei RDS](./image/huawei-rds.png)
 
 ---
 
@@ -65,41 +91,11 @@ Get the latest build from **[Releases](https://github.com/S0x007/aws-ops-manager
 
 | Platform | Format |
 |----------|--------|
-| macOS (Apple Silicon) | `.dmg` / `.zip` |
-| Windows | NSIS installer |
-| Linux | AppImage / `.deb` |
-
-### macOS quarantine
-
-If macOS blocks the app as an unverified developer:
-
-```bash
-sudo xattr -rd com.apple.quarantine "/Applications/AWS Ops Manager.app"
-```
+| macOS (Apple Silicon / Intel) | `.dmg` / `.zip` |
+| Windows | NSIS `.exe` |
+| Linux | AppImage |
 
 ### Build from source
-
-See [Development](#development) below, then:
-
-```bash
-npm run package:mac    # macOS
-npm run package:win    # Windows
-npm run package:linux  # Linux
-```
-
-Artifacts are written to `dist/`.
-
----
-
-## Development
-
-### Prerequisites
-
-- **Node.js** 18+
-- **npm** 9+
-- AWS credentials (`~/.aws/config`) or use the in-app credential manager
-
-### Setup
 
 ```bash
 git clone https://github.com/S0x007/aws-ops-manager.git
@@ -108,71 +104,47 @@ npm install
 npm run dev
 ```
 
-### Scripts
+**Prerequisites:** Node.js 18+, npm 9+. Add credentials in **Settings → Credential Manager**.
 
 | Command | Description |
 |---------|-------------|
-| `npm run dev` | Dev mode with HMR |
-| `npm run build` | Production build → `out/` |
-| `npm run preview` | Preview production build |
-| `npm run package:mac` | macOS DMG + ZIP |
-| `npm run package:win` | Windows NSIS |
-| `npm run package:linux` | AppImage + deb |
-| `npm run package:all` | All platforms |
-
-### Project layout
-
-```
-src/
-├── main/          # Electron main: IPC, AWS services, SSM terminal, encrypted store
-├── preload/       # contextBridge API (typed)
-└── renderer/      # React + Ant Design UI
-```
-
-More detail: **[DEVELOPMENT.md](./DEVELOPMENT.md)** · feature roadmap: **[ROADMAP.md](./ROADMAP.md)**
+| `npm run dev` | Development |
+| `npm run build` | Compile → `out/` |
+| `npm run package:mac` | Package macOS |
+| `npm run package:win` | Package Windows |
+| `npm run package:linux` | Package Linux |
 
 ---
 
-## Architecture
+## FAQ
 
-```
-Renderer (React)  →  window.electronAPI  →  Main (Node.js)  →  AWS SDK v3
+**1. macOS: “Cloud Ops Manager.app” cannot be opened**
+
+```bash
+sudo xattr -rd com.apple.quarantine "/Applications/Cloud Ops Manager.app"
 ```
 
-- **Security:** `contextIsolation: true`, `nodeIntegration: false` — all AWS calls go through IPC.
-- **Multi-account:** every IPC call carries `{ region, profile, source }`.
-- **Caching:** list endpoints cached ~5 minutes; cleared on credential/region change; `forceRefresh` on manual refresh.
+**2. macOS: app does not quit from window close**
+
+- Use the red close button, or **`Command + Q`** to quit.
+
+**3. Huawei OBS folder stats show `~`**
+
+Partial aggregate when a folder has more than 10,000 objects (size sum + latest modified time).
+
+**4. Stale list data**
+
+Click **Refresh**, or change region (AWS lists cache ~5 minutes by default).
 
 ---
 
-## Keyboard shortcuts
+## Docs
 
-| Shortcut | Action |
-|----------|--------|
-| `⌘K` / `Ctrl+K` | Command palette |
-| Right-click (EC2 row) | Context menu (SSM, stop, copy ID, …) |
-
-Language toggle: globe icon in the header (**中文 ↔ English**).
-
----
-
-## Contributing
-
-Issues and PRs are welcome. For large changes, open an issue first to discuss scope.
-
-1. Fork → branch → commit → PR
-2. Run `npm run build` before submitting
-3. Keep UI strings in `src/renderer/src/i18n/index.ts` (both `zh-CN` and `en-US`)
+- **[DEVELOPMENT.md](./DEVELOPMENT.md)** — IPC, providers, troubleshooting  
+- **[ROADMAP.md](./ROADMAP.md)** — Roadmap  
 
 ---
 
 ## License
 
 [MIT](./LICENSE)
-
----
-
-## Acknowledgments
-
-- UI patterns inspired by [Alibaba Cloud Client](https://www.alibabacloud.com/help/en/ecs/user-guide/overview-of-alibaba-cloud-client)
-- [Ant Design](https://ant.design/) · [xterm.js](https://xtermjs.org/) · [Zustand](https://github.com/pmndrs/zustand) · [AWS SDK for JavaScript v3](https://docs.aws.amazon.com/sdk-for-javascript/v3/developer-guide/)

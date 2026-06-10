@@ -52,7 +52,7 @@ export function registerEc2KeyPairsIpc(): void {
     try {
       setSource(params)
       const client = clientFactory.getClient(EC2Client, { region: params.region })
-      await client.send(new ImportKeyPairCommand({ KeyName: params.keyName, PublicKeyMaterial: Buffer.from(params.publicKey).toString('base64') }))
+      await client.send(new ImportKeyPairCommand({ KeyName: params.keyName, PublicKeyMaterial: new TextEncoder().encode(Buffer.from(params.publicKey).toString('base64')) }))
     } catch (err) { throw wrapErr(err, '导入密钥对失败') }
   })
 }

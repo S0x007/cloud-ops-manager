@@ -5,8 +5,10 @@ import {
   StartInstancesCommand,
   StopInstancesCommand,
   RebootInstancesCommand,
+  TerminateInstancesCommand,
   DescribeSecurityGroupsCommand,
   Filter,
+  type _InstanceType,
 } from '@aws-sdk/client-ec2'
 import { clientFactory } from './client.factory'
 
@@ -115,6 +117,11 @@ export async function rebootInstance(region: string, instanceId: string): Promis
   await client.send(new RebootInstancesCommand({ InstanceIds: [instanceId] }))
 }
 
+export async function terminateInstance(region: string, instanceId: string): Promise<void> {
+  const client = clientFactory.getClient(EC2Client, { region })
+  await client.send(new TerminateInstancesCommand({ InstanceIds: [instanceId] }))
+}
+
 export async function describeSecurityGroups(
   region: string,
   groupIds: string[],
@@ -159,7 +166,7 @@ export async function describeInstanceTypes(region: string, typeNames: string[])
   // 批量查询未缓存的（每批最多 100 个）
   for (let i = 0; i < toFetch.length; i += 100) {
     const batch = toFetch.slice(i, i + 100)
-    const resp = await client.send(new DescribeInstanceTypesCommand({ InstanceTypes: batch }))
+    const resp = await client.send(new DescribeInstanceTypesCommand({ InstanceTypes: batch as _InstanceType[] }))
     for (const info of resp.InstanceTypes ?? []) {
       const entry: InstanceTypeInfo = {
         vcpu: info.VCpuInfo?.DefaultVCpus ?? 0,

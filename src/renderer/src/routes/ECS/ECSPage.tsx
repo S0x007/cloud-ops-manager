@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useMemo } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Table, Button, Space, Tag, Empty, Typography } from 'antd'
 import { ReloadOutlined, ContainerOutlined } from '@ant-design/icons'
 import { useProfileStore } from '../../stores/profileStore'
@@ -19,6 +20,7 @@ interface ECSCluster {
 
 export function ECSPage(): JSX.Element {
   const t = useT()
+  const navigate = useNavigate()
   const activeProfile = useProfileStore((s) => s.activeProfile)
   const activeSource = useProfileStore((s) => s.activeSource)
   const activeRegion = useRegionStore((s) => s.activeRegion)
@@ -60,7 +62,9 @@ export function ECSPage(): JSX.Element {
       render: (name: string, record) => (
         <div>
           <ContainerOutlined style={{ marginRight: 8, color: '#1677ff' }} />
-          <Text strong>{name}</Text>
+          <a onClick={() => navigate(`/ecs/${encodeURIComponent(record.clusterName)}`)}>
+            <Text strong>{name}</Text>
+          </a>
           <div>
             <Text type="secondary" style={{ fontSize: 12 }}>
               {record.clusterArn}
@@ -99,7 +103,17 @@ export function ECSPage(): JSX.Element {
       render: (count: number) =>
         count > 0 ? <Tag color="orange">{count}</Tag> : <span>0</span>,
     },
-  ], [t])
+    {
+      title: t('common.actions'),
+      key: 'actions',
+      width: 120,
+      render: (_: unknown, record: ECSCluster) => (
+        <Button type="link" onClick={() => navigate(`/ecs/${encodeURIComponent(record.clusterName)}`)}>
+          {t('ecs.viewCluster')}
+        </Button>
+      ),
+    },
+  ], [t, navigate])
 
   return (
     <div>

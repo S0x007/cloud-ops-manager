@@ -5,12 +5,14 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs'
 
 // 本地凭证格式
 export interface StoredCredential {
-  id: string          // 唯一 ID
-  name: string        // 用户给的名字，如 "生产环境"、"测试账号"
-  accessKeyId: string // AWS AK
-  region: string      // 默认区域
-  description: string // 备注
-  createdAt: string   // 创建时间
+  id: string
+  name: string
+  accessKeyId: string
+  region: string
+  description: string
+  createdAt: string
+  provider?: string                      // 云厂商标识: 'aws' | 'huawei'，缺失时默认 'aws'
+  extraFields?: Record<string, string>  // 厂商特有字段（华为云 projectId 等）
 }
 
 interface CredentialPayload extends StoredCredential {
@@ -64,6 +66,8 @@ interface StorageFile {
     region: string
     description: string
     createdAt: string
+    provider?: string
+    extraFields?: Record<string, string>
   }>
 }
 
@@ -104,6 +108,8 @@ export function listCredentials(): StoredCredential[] {
     region: c.region,
     description: c.description,
     createdAt: c.createdAt,
+    provider: c.provider || 'aws',
+    extraFields: c.extraFields || undefined,
   }))
 }
 
@@ -121,6 +127,8 @@ export function getCredentialWithSecret(id: string): CredentialPayload | null {
     region: entry.region,
     description: entry.description,
     createdAt: entry.createdAt,
+    provider: entry.provider || 'aws',
+    extraFields: entry.extraFields || undefined,
   }
 }
 
@@ -130,6 +138,8 @@ export function addCredential(data: {
   secretAccessKey: string
   region: string
   description: string
+  provider?: string
+  extraFields?: Record<string, string>
 }): StoredCredential {
   const store = readStore()
   const { encrypted, iv, tag } = encrypt(data.secretAccessKey)
@@ -146,17 +156,20 @@ export function addCredential(data: {
     createdAt: new Date().toISOString(),
   }
 
-  store.credentials.push(entry)
+  // 直接在存储条目上加 provider/extraFields
+  const entryWithProvider = { ...entry, provider: data.provider || 'aws', extraFields: data.extraFields || undefined }
+  store.credentials.push(entryWithProvider)
   writeStore(store)
 
-  // 返回不含 SK 的公开信息
   return {
-    id: entry.id,
-    name: entry.name,
-    accessKeyId: entry.accessKeyId,
-    region: entry.region,
-    description: entry.description,
-    createdAt: entry.createdAt,
+    id: entryWithProvider.id,
+    name: entryWithProvider.name,
+    accessKeyId: entryWithProvider.accessKeyId,
+    region: entryWithProvider.region,
+    description: entryWithProvider.description,
+    createdAt: entryWithProvider.createdAt,
+    provider: entryWithProvider.provider,
+    extraFields: entryWithProvider.extraFields,
   }
 }
 
@@ -168,6 +181,8 @@ export function updateCredential(
     secretAccessKey: string
     region: string
     description: string
+    provider: string
+    extraFields: Record<string, string>
   }>,
 ): StoredCredential | null {
   const store = readStore()
@@ -178,6 +193,8 @@ export function updateCredential(
   if (data.accessKeyId !== undefined) entry.accessKeyId = data.accessKeyId
   if (data.region !== undefined) entry.region = data.region
   if (data.description !== undefined) entry.description = data.description
+  if (data.provider !== undefined) entry.provider = data.provider
+  if (data.extraFields !== undefined) entry.extraFields = data.extraFields
 
   if (data.secretAccessKey) {
     const { encrypted, iv, tag } = encrypt(data.secretAccessKey)
@@ -195,6 +212,8 @@ export function updateCredential(
     region: entry.region,
     description: entry.description,
     createdAt: entry.createdAt,
+    provider: entry.provider || 'aws',
+    extraFields: entry.extraFields || undefined,
   }
 }
 

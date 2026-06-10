@@ -1,12 +1,13 @@
 import { ipcMain, BrowserWindow } from 'electron'
 import {
-  S3Client, PutObjectCommand, GetObjectCommand,
+  S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand,
   DeleteObjectsCommand, CopyObjectCommand, HeadObjectCommand,
   GetObjectAttributesCommand, ListObjectVersionsCommand,
 } from '@aws-sdk/client-s3'
 import { clientFactory } from '../aws/client.factory'
 import * as s3Service from '../aws/s3.service'
 import { getCached, setCache } from '../store/api-cache'
+import { classifyObjectPreview } from '../../shared/object-preview'
 
 function setSource(params: { profile: string; source?: string }): void {
   clientFactory.setProfile(params.profile, (params.source as 'aws-config' | 'custom') || 'aws-config')
@@ -34,11 +35,16 @@ export function registerS3Ipc(): void {
     } catch (err) { throw wrapError(err, '获取存储桶列表失败') }
   })
 
-  ipcMain.handle('s3:list-objects', async (_event, params) => {
+  ipcMain.handle('s3:list-objects', async (_event, params: {
+    profile: string; source?: string; bucket: string; prefix?: string; continuationToken?: string; maxItems?: number
+  }) => {
     try {
       setSource(params)
-      return await s3Service.listObjects(params.bucket, params.prefix)
-    } catch (err) { throw wrapError(err, `列出对象失败 (${params.bucket}/${params.prefix})`) }
+      return await s3Service.listObjects(params.bucket, params.prefix ?? '', {
+        continuationToken: params.continuationToken,
+        maxItems: params.maxItems,
+      })
+    } catch (err) { throw wrapError(err, `列出对象失败 (${params.bucket}/${params.prefix ?? ''})`) }
   })
 
   ipcMain.handle('s3:head-bucket', async (_event, params) => {
@@ -66,20 +72,30 @@ export function registerS3Ipc(): void {
     } catch (err) { throw wrapError(err, '上传文件失败') }
   })
 
-  ipcMain.handle('s3:download-file', async (_event, params) => {
+  ipcMain.handle('s3:download-file', async (_event, params: {
+    region: string; profile: string; source: string; bucket: string; key: string; savePath: string; versionId?: string
+  }) => {
     try {
       setSource(params)
       const win = BrowserWindow.getFocusedWindow()
-      await s3Service.downloadFile(params.bucket, params.key, params.savePath, (loaded, total) => {
-        win?.webContents.send('s3:download-progress', { key: params.key, loaded, total })
-      })
+      await s3Service.downloadFile(
+        params.bucket,
+        params.key,
+        params.savePath,
+        (loaded, total) => {
+          win?.webContents.send('s3:download-progress', { key: params.key, loaded, total })
+        },
+        params.versionId,
+      )
     } catch (err) { throw wrapError(err, '下载文件失败') }
   })
 
-  ipcMain.handle('s3:get-signed-url', async (_event, params) => {
+  ipcMain.handle('s3:get-signed-url', async (_event, params: {
+    profile: string; source?: string; bucket: string; key: string; expiresIn?: number
+  }) => {
     try {
       setSource(params)
-      return await s3Service.generateSignedUrl(params.bucket, params.key)
+      return await s3Service.generateSignedUrl(params.bucket, params.key, params.expiresIn)
     } catch (err) { throw wrapError(err, '生成签名URL失败') }
   })
 
@@ -98,7 +114,7 @@ export function registerS3Ipc(): void {
 
   // 获取对象内容用于预览/编辑
   ipcMain.handle('s3:get-object-content', async (_event, params: {
-    region: string; profile: string; source: string; bucket: string; key: string
+    region: string; profile: string; source: string; bucket: string; key: string; versionId?: string
   }) => {
     try {
       // 校验 key 不为空
@@ -122,6 +138,7 @@ export function registerS3Ipc(): void {
       const response = await client.send(new GetObjectCommand({
         Bucket: params.bucket,
         Key: objectKey,
+        ...(params.versionId ? { VersionId: params.versionId } : {}),
       }))
 
       const contentType = response.ContentType ?? 'application/octet-stream'
@@ -137,51 +154,7 @@ export function registerS3Ipc(): void {
       }
       const data = Buffer.concat(chunks)
 
-      // 文本类型：直接返回字符串内容
-      const textTypes = ['text/', 'application/json', 'application/xml', 'application/javascript',
-        'application/x-yaml', 'application/x-sh', 'application/x-shellscript',
-        'application/x-httpd-php', 'text/yaml', 'text/x-yaml']
-      const textExtensions = ['.txt', '.json', '.xml', '.yaml', '.yml', '.sh', '.bash',
-        '.js', '.ts', '.jsx', '.tsx', '.py', '.rb', '.go', '.rs', '.java', '.c', '.cpp',
-        '.h', '.hpp', '.css', '.scss', '.less', '.html', '.htm', '.md', '.csv', '.log',
-        '.env', '.conf', '.ini', '.cfg', '.toml', '.sql', '.php', '.pl', '.swift',
-        '.gradle', '.properties', '.dockerfile', '.gitignore', '.editorconfig']
-      const keyLower = objectKey.toLowerCase()
-      const isText = textTypes.some((t) => contentType.startsWith(t)) ||
-        textExtensions.some((ext) => keyLower.endsWith(ext)) ||
-        contentType === 'application/json'
-
-      if (isText && data.length < 5 * 1024 * 1024) { // 5MB 以内文本
-        return {
-          type: 'text',
-          contentType,
-          content: data.toString('utf-8'),
-          size: data.length,
-        }
-      }
-
-      // 图片类型：写入临时文件
-      if (contentType.startsWith('image/') && data.length < 20 * 1024 * 1024) {
-        const { app } = await import('electron')
-        const { join } = await import('path')
-        const { writeFileSync } = await import('fs')
-        const ext = contentType.split('/')[1] === 'jpeg' ? 'jpg' : contentType.split('/')[1]
-        const tmpPath = join(app.getPath('temp'), `aws-ops-preview-${Date.now()}.${ext}`)
-        writeFileSync(tmpPath, data)
-        return {
-          type: 'image',
-          contentType,
-          tmpPath,
-          size: data.length,
-        }
-      }
-
-      // 二进制文件：不可预览
-      return {
-        type: 'binary',
-        contentType,
-        size: data.length,
-      }
+      return classifyObjectPreview(data, contentType, objectKey)
     } catch (err) { throw wrapError(err, '获取文件内容失败') }
   })
 
@@ -279,30 +252,64 @@ export function registerS3Ipc(): void {
   })
 
   ipcMain.handle('s3:list-object-versions', async (_event, params: {
-    region: string; profile: string; source: string; bucket: string; prefix: string
+    region: string; profile: string; source: string; bucket: string; prefix?: string; key?: string
   }) => {
     try {
       setSource(params)
       const region = await s3Service.getBucketRegion(params.bucket)
       const client = clientFactory.getClient(S3Client, { region })
       const versions: any[] = []
+      const exactKey = params.key?.trim()
+      const listPrefix = exactKey || params.prefix || undefined
       let keyMarker: string | undefined
       let versionIdMarker: string | undefined
       do {
         const resp = await client.send(new ListObjectVersionsCommand({
-          Bucket: params.bucket, Prefix: params.prefix || undefined,
+          Bucket: params.bucket, Prefix: listPrefix,
           KeyMarker: keyMarker, VersionIdMarker: versionIdMarker, MaxKeys: 500,
         }))
         for (const v of resp.Versions ?? []) {
-          versions.push({ key: v.Key, versionId: v.VersionId, size: v.Size, lastModified: v.LastModified?.toISOString(), isLatest: v.IsLatest, isDeleteMarker: false })
+          if (exactKey && v.Key !== exactKey) continue
+          versions.push({
+            key: v.Key,
+            versionId: v.VersionId ?? undefined,
+            size: v.Size,
+            lastModified: v.LastModified?.toISOString(),
+            isLatest: v.IsLatest,
+            isDeleteMarker: false,
+          })
         }
         for (const d of resp.DeleteMarkers ?? []) {
-          versions.push({ key: d.Key, versionId: d.VersionId, size: 0, lastModified: d.LastModified?.toISOString(), isLatest: d.IsLatest, isDeleteMarker: true })
+          if (exactKey && d.Key !== exactKey) continue
+          versions.push({
+            key: d.Key,
+            versionId: d.VersionId ?? undefined,
+            size: 0,
+            lastModified: d.LastModified?.toISOString(),
+            isLatest: d.IsLatest,
+            isDeleteMarker: true,
+          })
         }
         keyMarker = resp.NextKeyMarker
         versionIdMarker = resp.NextVersionIdMarker
       } while (keyMarker || versionIdMarker)
+      versions.sort((a, b) => (b.lastModified || '').localeCompare(a.lastModified || ''))
       return versions
     } catch (err) { throw wrapError(err, '获取版本列表失败') }
+  })
+
+  ipcMain.handle('s3:delete-object-version', async (_event, params: {
+    region: string; profile: string; source: string; bucket: string; key: string; versionId: string
+  }) => {
+    try {
+      setSource(params)
+      const region = await s3Service.getBucketRegion(params.bucket)
+      const client = clientFactory.getClient(S3Client, { region })
+      await client.send(new DeleteObjectCommand({
+        Bucket: params.bucket,
+        Key: params.key,
+        VersionId: params.versionId,
+      }))
+    } catch (err) { throw wrapError(err, '删除对象版本失败') }
   })
 }

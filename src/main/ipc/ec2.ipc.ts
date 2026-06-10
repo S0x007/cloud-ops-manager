@@ -57,6 +57,15 @@ export function registerEc2Ipc(): void {
     } catch (err) { throw wrapErr(err, '重启实例失败') }
   })
 
+  ipcMain.handle('ec2:terminate-instance', async (_event, params: {
+    region: string; profile: string; source: string; instanceId: string
+  }) => {
+    try {
+      setSource(params)
+      await ec2Service.terminateInstance(params.region, params.instanceId)
+    } catch (err) { throw wrapErr(err, '终止实例失败') }
+  })
+
   ipcMain.handle('ec2:describe-instance-types', async (_event, params: {
     region: string; profile: string; source: string; types: string[]
   }) => {

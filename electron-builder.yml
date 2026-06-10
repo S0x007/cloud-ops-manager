@@ -1,5 +1,5 @@
-appId: com.aws.ops-manager
-productName: AWS Ops Manager
+appId: com.cloud.ops-manager
+productName: Cloud Ops Manager
 copyright: Copyright 2026
 
 directories:
@@ -14,6 +14,16 @@ extraResources:
     to: icon-mac.png
 
 asar: true
+
+# ws 的 bufferutil/utf-8-validate 为可选性能依赖，已移除；打包时跳过 native rebuild 避免交叉编译需 Xcode CLT
+npmRebuild: false
+nodeGypRebuild: false
+
+publish:
+  provider: github
+  owner: S0x007
+  repo: cloud-ops-manager
+  releaseType: release
 
 mac:
   category: public.app-category.developer-tools
@@ -39,7 +49,7 @@ nsis:
   perMachine: false
   createDesktopShortcut: true
   createStartMenuShortcut: true
-  shortcutName: AWS Ops Manager
+  shortcutName: Cloud Ops Manager
 
 linux:
   target:
