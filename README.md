@@ -2,8 +2,6 @@
 
 [简体中文](./README.zh-CN.md)
 
-> Repository name remains `aws-ops-manager` for history; the application window title is **Cloud Ops Manager**.
-
 ---
 
 ## Disclaimer
