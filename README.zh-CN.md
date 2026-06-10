@@ -2,7 +2,6 @@
 
 [English](./README.md)
 
-> 仓库名仍为 `aws-ops-manager`（历史原因）；应用窗口标题为 **Cloud Ops Manager**。
 
 ---
 
